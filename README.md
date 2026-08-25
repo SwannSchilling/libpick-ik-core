@@ -28,6 +28,31 @@ extern/rsl/          vendored byte-identical RSL random/queue sources (see LICEN
 tests/               Catch2 tests, no MoveIt (hand-written FK models)
 ```
 
+## Example: `arm7_cross_check`
+
+`examples/arm7_cross_check` is a standalone, dependency-free test/example
+program (no ROS, no server, no DLL) that drives the solver with a 7-DOF
+`FkFn` ported 1:1 from a p5.js POC sketch's URDF forward kinematics
+(fixed-axis RPY = Rz(yaw)·Ry(pitch)·Rx(roll), `SCALE` display factor divided
+out to meters). It runs three parts:
+
+1. **FK cross-check** — tool0 pose for five pinned joint configurations
+   (print-and-compare against the sketch's `computeURDFFK(q).tool0 / SCALE`;
+   the two agree to machine precision).
+2. **PickIK self-test** — target = FK of a known configuration, seed =
+   all zeros; runs `ik_gradient` and `ik_memetic` and verifies
+   FK(solution) reaches the target.
+3. **IK against external targets** — the same positions the p5.js sketch's
+   own CCD solver chases (target sliders in mm), same quantized "all zero"
+   seed, position-only goal (the POC's CCD is position-only):
+   a "deep fold" target where every solution pins J4/J6 at the 2.09 rad
+   limit, and a "moderate" target.
+
+```sh
+cmake --build build --config RelWithDebInfo --target arm7_cross_check
+build/examples/arm7_cross_check/RelWithDebInfo/arm7_cross_check.exe
+```
+
 ## Provenance
 
 - `ik_gradient.cpp`, `ik_memetic.cpp` and the test `goal_tests.cpp` are

@@ -31,6 +31,12 @@
 //   print the 7 resulting joint values, position/orientation error, and
 //   verify that FK(solution) reaches the target.
 //
+// Part 3 — IK against the p5.js POC's external targets:
+//   A (deep fold): target sliders 300/200/450 mm = (0.30, 0.20, 0.45) m;
+//   B (moderate):  target sliders 450/250/450 mm = (0.45, 0.25, 0.45) m.
+//   Same (quantized) seed as the sketch's "all zero" slider state,
+//   position-only goal (the POC's CCD is position-only); both solvers.
+//
 // No ROS, no MoveIt, no solver modifications.
 
 #include <pick_ik/fk.hpp>
@@ -169,8 +175,11 @@ double orientation_error(Eigen::Isometry3d const& pose, Eigen::Isometry3d const&
 }
 
 /// Runs one solver, prints the outcome, and verifies FK(solution) ~ target.
+/// For position-only goals the orientation of the (arbitrary) solution is
+/// not checked against the target.
 void report(char const* name, Eigen::Isometry3d const& target, pick_ik::FkFn const& fk,
-            pick_ik::Robot const& robot, std::optional<std::vector<double>> const& maybe) {
+            pick_ik::Robot const& robot, std::optional<std::vector<double>> const& maybe,
+            bool position_only = false) {
     std::printf("\n=== %s ===\n", name);
     if (!maybe.has_value()) {
         std::printf("  NO SOLUTION (seed not improved into the target neighborhood)\n");
@@ -189,8 +198,8 @@ void report(char const* name, Eigen::Isometry3d const& target, pick_ik::FkFn con
     std::printf("  orientation err = %.9f rad\n", rot_err);
     std::printf("  within joint limits: %s\n",
                 robot.is_valid_configuration(q) ? "yes" : "NO");
-    std::printf("  FK(solution) reaches target: %s\n",
-                (pos_err < 1e-3 && rot_err < 1e-3) ? "YES" : "no");
+    bool const reached = position_only ? (pos_err < 1e-3) : (pos_err < 1e-3 && rot_err < 1e-3);
+    std::printf("  FK(solution) reaches target: %s\n", reached ? "YES" : "no");
 }
 
 }  // namespace
@@ -281,6 +290,82 @@ int main() {
                             /*approx_solution=*/false,
                             /*print_debug=*/false);
     report("ik_memetic", target, fk, robot, maybe_memetic);
+
+    // =========================================================================
+    // Part 3 — IK against external targets (p5.js POC cross-check)
+    // =========================================================================
+    // The p5.js sketch chases these same positions with its own CCD solver:
+    // target sliders in mm, converted by
+    //   targetPos = sliderValue * SCALE / 1000   (SCALE = 250)
+    // i.e. slider mm -> meters. Both targets are position-only, matching the
+    // POC's CCD (which drives tool0 position, ignoring orientation).
+    //
+    //   A = "deep fold": 300/200/450 mm. Sits deep in the workspace: every
+    //       solution pins J4 or J6 at the 2.09 rad limit. The POC's CCD
+    //       stalls ~30 mm short of this target from the zero seed.
+    //   B = "moderate":  450/250/450 mm. Reached with J2~0.5, J4~1.3,
+    //       J6~1.8 — no joint pinned at its limit.
+    //
+    // NOTE: an earlier candidate (100/150/450) mm was OUT of the arm's
+    // workspace: with the +-2.09 rad J2/J4 limits the tool can never come
+    // closer than ~0.275 m to the J2 joint at (0, 0, 0.34); that point sat
+    // 0.211 m away. Both solvers correctly reported NO SOLUTION for it.
+    //
+    // The seed matches the sketch's quantized "all zero" slider state: p5
+    // sliders snap to 0.01 rad steps anchored at the joint's lower limit
+    // (value = round((v - min)/step)*step + min), so filling 0 gives 0.0 for
+    // the 2.09-limited joints and -0.00159265 for the pi-limited ones.
+    std::printf("\n=== Part 3: IK against external targets (p5.js cross-check) ===\n");
+    {
+        auto make_pos_target = [](double x, double y, double z) {
+            Eigen::Isometry3d t = Eigen::Isometry3d::Identity();
+            t.translation() = Eigen::Vector3d(x, y, z);
+            return t;
+        };
+        std::vector<std::pair<char const*, Eigen::Isometry3d>> const targets3 = {
+            {"A (deep fold) 300/200/450 mm", make_pos_target(0.30, 0.20, 0.45)},
+            {"B (moderate) 450/250/450 mm",  make_pos_target(0.45, 0.25, 0.45)}};
+        std::vector<double> const seed3 = {-0.00159265, 0.0, -0.00159265, 0.0, -0.00159265, 0.0,
+                                            -0.00159265};
+
+        for (auto const& [label, target3] : targets3) {
+            std::printf("\n--- Target %s ---\n", label);
+            print_vec("  seed [rad]", seed3);
+            print_pose("  target (position only)", target3);
+
+            // Position-only goal: the POC's CCD is position-only (tool0 position).
+            auto const frame_tests3 =
+                pick_ik::make_frame_tests({target3}, /*position_threshold=*/1e-3,
+                                          /*orientation_threshold=*/std::nullopt);
+            std::vector<pick_ik::Goal> const goals3;
+            auto const solution_fn3 =
+                pick_ik::make_is_solution_test_fn(frame_tests3, goals3, /*cost_threshold=*/1e-3,
+                                                  fk);
+            auto const pose_costs3 =
+                pick_ik::make_pose_cost_functions({target3}, /*position_scale=*/1.0,
+                                                  /*rotation_scale=*/0.0);
+            auto const cost_fn3 = pick_ik::make_cost_fn(pose_costs3, goals3, fk);
+
+            pick_ik::GradientIkParams gd3;
+            gd3.max_time = 0.5;
+            gd3.max_iterations = 500;
+            auto const maybe_gd3 =
+                pick_ik::ik_gradient(seed3, robot, cost_fn3, solution_fn3, gd3,
+                                     /*approx_solution=*/false);
+            report("ik_gradient (position only)", target3, fk, robot, maybe_gd3,
+                   /*position_only=*/true);
+
+            pick_ik::MemeticIkParams me3;
+            me3.num_threads = 4;
+            me3.max_time = 2.0;
+            auto const maybe_me3 =
+                pick_ik::ik_memetic(seed3, robot, cost_fn3, solution_fn3, me3,
+                                    /*approx_solution=*/false,
+                                    /*print_debug=*/false);
+            report("ik_memetic (position only)", target3, fk, robot, maybe_me3,
+                   /*position_only=*/true);
+        }
+    }
 
     std::printf("\nDone.\n");
     return (maybe_gradient.has_value() && maybe_memetic.has_value()) ? 0 : 1;
