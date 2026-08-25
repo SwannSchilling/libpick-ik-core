@@ -16,6 +16,7 @@ cmake_minimum_required(VERSION 3.22)
 project(pick_ik_core LANGUAGES CXX)
 
 option(PICK_IK_CORE_BUILD_TESTS "Build pick_ik_core tests" ON)
+option(PICK_IK_CORE_BUILD_EXAMPLES "Build pick_ik_core examples" ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
@@ -110,4 +111,11 @@ install(
 if(PICK_IK_CORE_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# Examples (standalone, no ROS/MoveIt)
+# ---------------------------------------------------------------------------
+if(PICK_IK_CORE_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()
