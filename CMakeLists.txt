@@ -17,6 +17,7 @@ project(pick_ik_core LANGUAGES CXX)
 
 option(PICK_IK_CORE_BUILD_TESTS "Build pick_ik_core tests" ON)
 option(PICK_IK_CORE_BUILD_EXAMPLES "Build pick_ik_core examples" ON)
+option(PICK_IK_CORE_BUILD_PYTHON "Build the Python (pybind11) binding 'pickik'" OFF)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
@@ -119,4 +120,11 @@ endif()
 # ---------------------------------------------------------------------------
 if(PICK_IK_CORE_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+# ---------------------------------------------------------------------------
+# Python binding (optional; off by default so normal builds stay dependency-free)
+# ---------------------------------------------------------------------------
+if(PICK_IK_CORE_BUILD_PYTHON)
+    add_subdirectory(bindings/python)
 endif()

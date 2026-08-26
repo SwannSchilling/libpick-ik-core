@@ -116,11 +116,22 @@ auto CcdSolver::solve(Robot const& robot,
     Eigen::Vector3d const target_pos = targets.front().translation();
 
     std::vector<double> q = q_seed;
+    {
+        auto const frames = link_fk(q_seed);
+        if (frames.size() != n + 1) {
+            throw std::invalid_argument("CcdSolver: link_fk must return n + 1 frames "
+                                        "(joint frames + tip frame)");
+        }
+    }
     for (int pass = 0; pass < max_passes_; ++pass) {
         for (int j = static_cast<int>(n) - 1; j >= 0; --j) {
             // Re-read the configuration at every joint update (the POC
             // re-reads its sliders at every joint step).
             auto const frames = link_fk(q);
+            if (frames.size() != n + 1) {
+                throw std::invalid_argument("CcdSolver: link_fk must return n + 1 frames "
+                                            "(joint frames + tip frame)");
+            }
             Eigen::Vector3d const ee = frames.back().translation();
             Eigen::Vector3d const joint_pos = frames[static_cast<size_t>(j)].translation();
             Eigen::Vector3d const world_axis =

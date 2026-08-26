@@ -29,6 +29,7 @@ src/
     solver.cpp       the three IkSolver implementations (wrapper + CCD port)
 extern/rsl/          vendored byte-identical RSL random/queue sources (see LICENSE note)
 tests/               Catch2 tests, no MoveIt (hand-written FK models)
+bindings/python/     optional pybind11 module `pickik` (PICK_IK_CORE_BUILD_PYTHON, default OFF)
 ```
 
 ## Example: `arm7_cross_check`
@@ -60,6 +61,30 @@ out to meters). It runs three parts:
 cmake --build build --config RelWithDebInfo --target arm7_cross_check
 build/examples/arm7_cross_check/RelWithDebInfo/arm7_cross_check.exe
 ```
+
+## Python bindings (`pickik`)
+
+An optional pybind11 module exposes the `IkSolver` contract to Python
+(off by default; plain core builds are unaffected):
+
+```cmake
+cmake -S . -B build ... -DPICK_IK_CORE_BUILD_PYTHON=ON
+# -> build/pick_ik_core/bindings/python/<config>/pickik.<tag>.pyd
+```
+
+- `import pickik` gives `make_robot`/`Robot`, `JointSpec`, `SolveOptions`,
+  `IkResult`, and the three solvers (`CcdSolver`, `PickIkGradientSolver`,
+  `PickIkMemeticSolver`) as `IkSolver` subclasses.
+- FK is a **Python callable** `q -> sequence of n+1 4x4 frames` (base frame
+  first, tip frame last; meters; numpy arrays or nested lists both accepted).
+  The binding acquires the GIL for every FK call and releases it around the
+  actual solve — required so the memetic solver's worker threads can call a
+  Python FK without deadlocking.
+- Quaternions are not used by the contract (poses are `Isometry3d`), so the
+  binding takes full 4x4 frames directly.
+
+A FastAPI service built on this binding (dev/test interface, kept out of this
+library on purpose) lives in `ik_service/` in the parent workspace.
 
 ## Provenance
 
