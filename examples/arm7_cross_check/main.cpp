@@ -44,9 +44,11 @@
 #include <pick_ik/ik_gradient.hpp>
 #include <pick_ik/ik_memetic.hpp>
 #include <pick_ik/robot.hpp>
+#include <pick_ik/solvers.hpp>
 
 #include <Eigen/Geometry>
 
+#include <chrono>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
@@ -114,16 +116,26 @@ inline Eigen::Vector3d const& tool_offset() {
     return t;
 }
 
-/// tool0 pose in the base frame for q = [J1..J7] (meters/radians).
-inline Eigen::Isometry3d tool0_pose(std::vector<double> const& q) {
+/// All joint child frames plus tool0, in the base frame, for q = [J1..J7]:
+/// frames[0..6] = joint pivots, frames[7] = tool0.
+inline std::vector<Eigen::Isometry3d> link_frames(std::vector<double> const& q) {
+    std::vector<Eigen::Isometry3d> frames;
+    frames.reserve(joints().size() + 1);
     Eigen::Isometry3d frame = Eigen::Isometry3d::Identity();
     size_t i = 0;
     for (Joint const& j : joints()) {
         Eigen::Isometry3d const origin =
             Eigen::Translation3d(j.origin) * Eigen::Quaterniond(j.rotation);
         frame = frame * origin * Eigen::AngleAxisd(q[i++], j.axis);
+        frames.push_back(frame);
     }
-    return frame * Eigen::Translation3d(tool_offset());
+    frames.push_back(frame * Eigen::Translation3d(tool_offset()));
+    return frames;
+}
+
+/// tool0 pose in the base frame for q = [J1..J7] (meters/radians).
+inline Eigen::Isometry3d tool0_pose(std::vector<double> const& q) {
+    return link_frames(q).back();
 }
 
 /// pick_ik::FkFn returning the single tool0 frame. Pure function of q:
@@ -132,6 +144,20 @@ inline pick_ik::FkFn make_fk() {
     return [](std::vector<double> const& q) {
         return std::vector<Eigen::Isometry3d>{tool0_pose(q)};
     };
+}
+
+/// pick_ik::LinkFkFn returning all joint frames + tool0.
+inline pick_ik::LinkFkFn make_link_fk() {
+    return [](std::vector<double> const& q) {
+        return link_frames(q);
+    };
+}
+
+/// Local joint axes (all z, per the POC URDF).
+inline std::vector<Eigen::Vector3d> make_local_axes() {
+    std::vector<Eigen::Vector3d> axes;
+    for (int i = 0; i < 7; ++i) axes.push_back(Eigen::Vector3d::UnitZ());
+    return axes;
 }
 
 }  // namespace arm7
@@ -364,6 +390,71 @@ int main() {
                                     /*print_debug=*/false);
             report("ik_memetic (position only)", target3, fk, robot, maybe_me3,
                    /*position_only=*/true);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Part 4: all three solvers through the unified IkSolver contract
+    // (pick_ik/solvers.hpp) — position-only, same seed as Part 3.
+    //
+    //   q = solver.solve(robot, link_fk, axes, seed, {target}, options)
+    //
+    // This is the generic entry point any frontend (transport layer, Python,
+    // C++) uses; the POC's CCD is included as a first-class implementation
+    // alongside the PickIK solvers.
+    // ---------------------------------------------------------------------
+    {
+        auto make_pos_target = [](double x, double y, double z) {
+            Eigen::Isometry3d t = Eigen::Isometry3d::Identity();
+            t.translation() = Eigen::Vector3d(x, y, z);
+            return t;
+        };
+        std::vector<std::pair<char const*, Eigen::Isometry3d>> const targets4 = {
+            {"A (deep fold) 300/200/450 mm", make_pos_target(0.30, 0.20, 0.45)},
+            {"B (moderate) 450/250/450 mm",  make_pos_target(0.45, 0.25, 0.45)}};
+        std::vector<double> const seed4 = {-0.00159265, 0.0, -0.00159265, 0.0, -0.00159265, 0.0,
+                                            -0.00159265};
+        auto link_fk4 = arm7::make_link_fk();
+        auto axes4 = arm7::make_local_axes();
+
+        pick_ik::CcdSolver ccd(600);  // ~2 s of POC runtime
+        pick_ik::GradientIkParams gd4;
+        gd4.max_time = 2.0;  // target A's limit-pinned solution sits on a near-flat
+        gd4.max_iterations = 2000;  // cost face: give the local search a wide budget
+        pick_ik::PickIkGradientSolver gradient(gd4);
+        pick_ik::MemeticIkParams me4;
+        me4.num_threads = 4;
+        me4.max_time = 2.0;
+        pick_ik::PickIkMemeticSolver memetic(me4);
+        std::vector<pick_ik::IkSolver const*> const solvers = {&ccd, &gradient, &memetic};
+
+        pick_ik::SolveOptions pos_only;
+        pos_only.orientation_threshold = std::nullopt;  // position-only goal
+        pos_only.rotation_scale = 0.0;                  // ...and no orientation in the cost
+
+        std::printf("\n================ Part 4: unified solver API ================\n");
+        for (auto const& solver : solvers) {
+            for (auto const& [label, target4] : targets4) {
+                std::printf("\n--- %s | target %s ---\n", solver->name().c_str(), label);
+                auto const t0 = std::chrono::steady_clock::now();
+                auto const result =
+                    solver->solve(robot, link_fk4, axes4, seed4, {target4}, pos_only);
+                auto const t1 = std::chrono::steady_clock::now();
+                auto const ms = std::chrono::duration_cast<std::chrono::microseconds>(
+                                    t1 - t0)
+                                    .count() /
+                                1000.0;
+                std::printf("  success: %s | position error: %.4f mm | solve time: %.1f ms\n",
+                            result.success ? "true" : "false",
+                            result.position_error * 1000.0, ms);
+                print_vec("  q [rad]", result.q);
+                std::vector<double> q_deg;
+                for (double const d : result.q) q_deg.push_back(d * 180.0 / M_PI);
+                print_vec("  q [deg]", q_deg);
+                if (result.success) {
+                    print_pose("  FK(q)", arm7::tool0_pose(result.q));
+                }
+            }
         }
     }
 

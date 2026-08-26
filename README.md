@@ -19,11 +19,14 @@ include/pick_ik/
     goal.hpp         frame tests, pose costs, secondary objectives, cost/solution assembly
     ik_gradient.hpp  local solver entry point: ik_gradient(...)
     ik_memetic.hpp   global solver entry point: ik_memetic(...)
+    solver.hpp       generic IkSolver contract: LinkFkFn, SolveOptions, IkResult
+    solvers.hpp      CcdSolver, PickIkGradientSolver, PickIkMemeticSolver
 src/
     robot.cpp        pure parts of upstream robot.cpp + Robot::make
     goal.cpp         pure parts of upstream goal.cpp (make_ik_cost_fn stays in the ROS adapter)
     ik_gradient.cpp  byte-identical to upstream
     ik_memetic.cpp   byte-identical to upstream
+    solver.cpp       the three IkSolver implementations (wrapper + CCD port)
 extern/rsl/          vendored byte-identical RSL random/queue sources (see LICENSE note)
 tests/               Catch2 tests, no MoveIt (hand-written FK models)
 ```
@@ -47,6 +50,11 @@ out to meters). It runs three parts:
    seed, position-only goal (the POC's CCD is position-only):
    a "deep fold" target where every solution pins J4/J6 at the 2.09 rad
    limit, and a "moderate" target.
+4. **Unified solver API demo** — the same two targets and seed through the
+   `IkSolver` contract: CCD, gradient, and memetic side by side, with solve
+   times. Notably, the de-quantized C++ CCD reaches both targets sub-millimeter
+   (~2 ms) where the POC's browser CCD stalled ~15–35 mm short: that stall was
+   an artifact of the p5 sliders' 0.01 rad quantization, not of the CCD math.
 
 ```sh
 cmake --build build --config RelWithDebInfo --target arm7_cross_check
@@ -145,10 +153,48 @@ pick_ik::MemeticIkParams params;  // num_threads etc.
 auto maybe = pick_ik::ik_memetic(seed, robot, cost_fn, solution_fn, params);
 ```
 
+## Solver API (`IkSolver` contract)
+
+`include/pick_ik/solver.hpp` defines a generic solver interface so any
+frontend (transport layer, Python, Unity, C++ controller) can use or swap
+solvers without changing its code:
+
+```cpp
+#include <pick_ik/solvers.hpp>
+
+pick_ik::CcdSolver ccd(600);               // POC CCD, ~2 s of POC runtime
+pick_ik::PickIkGradientSolver gradient;    // upstream ik_gradient
+pick_ik::PickIkMemeticSolver memetic;      // upstream ik_memetic
+
+pick_ik::SolveOptions options;             // position-only:
+options.orientation_threshold = std::nullopt;
+options.rotation_scale = 0.0;              // no orientation in the cost
+
+auto result = memetic.solve(robot, link_fk, local_axes, seed, {target}, options);
+// result: success, q, position_error [m], orientation_error [rad]
+```
+
+- `CcdSolver` is a **faithful C++ port of the p5.js POC's `solveCCD`**
+  (J7→J1, damped angle update, limit clamping, configuration re-read at every
+  joint step). Position-only: it chases `targets[0]`'s position with the tip
+  frame and reports `orientation_error = -1`. Because the POC ran on 0.01 rad
+  slider quantization, the continuous port outperforms it: on the arm7
+  cross-check targets it reaches ~1e-6 m in ~2 ms where the browser CCD
+  stalled ~15–35 mm short.
+- `PickIkGradientSolver` / `PickIkMemeticSolver` are thin wrappers around the
+  upstream free functions (which remain byte-identical); the wrapper builds
+  the frame-test/cost plumbing from `SolveOptions` and packages the unified
+  `IkResult`. Tests assert the gradient wrapper is bit-identical to the direct
+  free-function call.
+- `LinkFkFn` is the richer FK callback: `n` joint child frames (pivots) plus
+  the tip frame; `pick_ik::make_tip_fk(link_fk)` derives the tip-only `FkFn`.
+  v1 supports a single tip frame and a single target pose.
+
 ## FK contract
 
 `FkFn` maps the active joint vector (same order as `Robot::variables`, i.e.
 `[J1..J7]`) to **one `Eigen::Isometry3d` per configured tip frame, in the
-base/world frame**. The implementation must be re-entrant: the memetic solver
-calls the cost function — hence FK — concurrently from
+base/world frame**. `LinkFkFn` does the same plus the `n` joint child frames
+in front. Implementations must be re-entrant: the memetic solver calls the
+cost function — hence FK — concurrently from
 `num_threads × elite_size` threads in the worst case.

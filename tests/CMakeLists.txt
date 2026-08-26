@@ -22,7 +22,8 @@ endif()
 add_executable(test-pick_ik_core
     goal_tests.cpp
     robot_tests_core.cpp
-    ik_tests_core.cpp)
+    ik_tests_core.cpp
+    solver_tests.cpp)
 target_link_libraries(test-pick_ik_core
     PRIVATE
         pick_ik_core

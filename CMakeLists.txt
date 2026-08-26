@@ -67,6 +67,7 @@ add_library(pick_ik_core STATIC
     src/goal.cpp
     src/ik_gradient.cpp
     src/ik_memetic.cpp
+    src/solver.cpp
     extern/rsl/src/random.cpp)
 add_library(pick_ik::core ALIAS pick_ik_core)
 

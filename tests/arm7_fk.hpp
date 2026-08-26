@@ -13,6 +13,7 @@
 // applied here.
 
 #include <pick_ik/fk.hpp>
+#include <pick_ik/solver.hpp>
 
 #include <Eigen/Geometry>
 #include <cassert>
@@ -94,18 +95,31 @@ class Arm7 {
         return arm;
     }
 
-    /// @brief Pose of the tool0 frame in the base frame for joint positions q = [J1..J7].
-    auto tool0_pose(std::vector<double> const& q) const -> Eigen::Isometry3d {
+    /**
+     * @brief All joint child frames plus the tool0 frame.
+     * @return frames[i] for 0 <= i < 7: frame of joint i's child link (pivot
+     *         frame including origin and current joint rotation);
+     *         frames[7]: tool0. All in the base frame.
+     */
+    auto link_frames(std::vector<double> const& q) const -> std::vector<Eigen::Isometry3d> {
         assert(q.size() == joints_.size());
+        std::vector<Eigen::Isometry3d> frames;
+        frames.reserve(joints_.size() + 1);
         Eigen::Isometry3d frame = Eigen::Isometry3d::Identity();
         for (size_t i = 0; i < joints_.size(); ++i) {
             Joint const& j = joints_[i];
             Eigen::Isometry3d const origin =
                 Eigen::Translation3d(j.origin) * Eigen::Quaterniond(j.rotation);
             frame = frame * origin * Eigen::AngleAxisd(q[i], j.axis);
+            frames.push_back(frame);
         }
-        frame = frame * Eigen::Translation3d(tool_offset_);
-        return frame;
+        frames.push_back(frame * Eigen::Translation3d(tool_offset_));
+        return frames;
+    }
+
+    /// @brief Pose of the tool0 frame in the base frame for joint positions q = [J1..J7].
+    auto tool0_pose(std::vector<double> const& q) const -> Eigen::Isometry3d {
+        return link_frames(q).back();
     }
 
     auto joint_count() const -> size_t { return joints_.size(); }
@@ -125,6 +139,24 @@ inline auto make_fk() -> pick_ik::FkFn {
         -> std::vector<Eigen::Isometry3d> {
         return std::vector<Eigen::Isometry3d>{arm.tool0_pose(q)};
     };
+}
+
+/// @brief pick_ik::LinkFkFn: all joint child frames + tool0 (8 frames).
+inline auto make_link_fk() -> pick_ik::LinkFkFn {
+    auto arm = Arm7::make();
+    return [arm = std::move(arm)](std::vector<double> const& q)
+        -> std::vector<Eigen::Isometry3d> {
+        return arm.link_frames(q);
+    };
+}
+
+/// @brief Local joint axes (all z, per the POC URDF).
+inline auto make_local_axes() -> std::vector<Eigen::Vector3d> {
+    std::vector<Eigen::Vector3d> axes;
+    for (int i = 0; i < 7; ++i) {
+        axes.push_back(Eigen::Vector3d::UnitZ());
+    }
+    return axes;
 }
 
 }  // namespace arm7
