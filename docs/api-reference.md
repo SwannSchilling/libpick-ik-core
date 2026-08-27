@@ -215,6 +215,7 @@ CORS: `*` (the p5 sketch may call from `file://`, Origin: null).
 | `GET /solvers` | `{"solvers": ["ccd","gradient","memetic"]}` |
 | `GET /health` | status + arm + FK backend |
 | `GET /` | web demo page |
+| `GET /lib/{filename}` | static assets for the web demo (vendored `p5.js` — no CDN) |
 
 **`/solve` request**
 
@@ -292,6 +293,12 @@ parentheses)**
   + ° when orientation is tracked), solve time, service online/offline.
 * Vendored p5 v2.3.2 / p5.sound v0.4.1 are git-ignored; fetch URLs in the
   sketch's README.
+* **Web demo** (`ik_service/web`, served at `GET /`): same option surface
+  as the sketch, plus an interactive **3D view** — p5.js WebGL scene
+  (arm chain from the `/fk` frames, tool cross, target ring) with
+  drag-orbit / wheel-zoom and **top / front / side / angled** preset
+  buttons. p5 v2.3.2 is vendored at `web/lib/p5.js` and served via
+  `GET /lib/{filename}` (no CDN dependency).
 
 ---
 
@@ -411,7 +418,9 @@ Readings:
   point (1500, 0, 450) mm with the +Z axis dropdown `gradient OK 0.13 mm
   in 852 ms` (tip +Z · dir = 0.98).
 * Web demo (Phase 3): options mirror verified live (J5 target 0.49 rad →
-  `gradient OK 0.83 mm in 23 ms`, q5 = 28.07° ≈ 0.49 rad).
+  `gradient OK 0.83 mm in 23 ms`, q5 = 28.07° ≈ 0.49 rad); interactive
+  3D view verified (drag-orbit/zoom/presets, arm follows solves —
+  tool0 lands at target in the scene, `/lib/p5.js` served).
 
 ---
 

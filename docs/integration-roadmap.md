@@ -221,9 +221,11 @@ the option tables live in `api-reference.md` §4/§7.
 - Secondary objectives (Phase 2/3): per-joint angle targets (J1–J7
   inputs, rad) + look-at point (x/y/z mm) with a tip-axis dropdown
   (+X/+Y/+Z), each with its own weight slider — all off by default.
-- Web demo (`ik_service/web`): solver dropdown + 2D live view + FK
-  readout; options mirrored (memetic threads/elite/time, all three
-  secondary-objective weights, joint targets, look-at + axis).
+- Web demo (`ik_service/web`): solver dropdown + interactive 3D view
+  (p5.js WebGL, drag-orbit / wheel-zoom / top–front–side–angled presets,
+  vendored p5.js served from the service) + FK readout; options mirrored
+  (memetic threads/elite/time, all three secondary-objective weights,
+  joint targets, look-at + axis).
 - Both are service consumers: performance ≈ §2.2 row 2, which is fine for
   event-driven UI solves.
 
