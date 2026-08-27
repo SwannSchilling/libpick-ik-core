@@ -77,14 +77,90 @@ cmake -S . -B build ... -DPICK_IK_CORE_BUILD_PYTHON=ON
   `PickIkMemeticSolver`) as `IkSolver` subclasses.
 - FK is a **Python callable** `q -> sequence of n+1 4x4 frames` (base frame
   first, tip frame last; meters; numpy arrays or nested lists both accepted).
-  The binding acquires the GIL for every FK call and releases it around the
-  actual solve — required so the memetic solver's worker threads can call a
-  Python FK without deadlocking.
+  The FK is **always evaluated on the calling Python thread**, which holds the
+  GIL for the whole solve — see the threading model below.
 - Quaternions are not used by the contract (poses are `Isometry3d`), so the
   binding takes full 4x4 frames directly.
+- `PickIkMemeticSolver(num_threads=N)` runs N independent parallel species
+  (upstream behaviour); it is safe in this binding because no native thread
+  ever touches the interpreter.
 
 A FastAPI service built on this binding (dev/test interface, kept out of this
 library on purpose) lives in `ik_service/` in the parent workspace.
+
+## Python binding threading model (and two crash post-mortems)
+
+The memetic solver is heavily multithreaded: its solver thread plus
+`num_threads` species threads, each spawning `elite_size` gradient-descent
+threads **every generation**, all of which evaluate the FK callback. When the
+FK is a Python callable, two CPython rules make a naive binding crash:
+
+1. A thread must not mix `PyGILState_*` and `PyEval_*` APIs.
+2. No refcount operation (`Py_INCREF`/`Py_DECREF`) may happen without the GIL.
+
+Upstream constraint: `ik_gradient.cpp` / `ik_memetic.cpp` / `solver.cpp`
+stay byte-identical, so all of this is solved in `pickik_module.cpp` alone.
+
+### Design: the "FK pump"
+
+- For solvers without native FK workers (CCD, gradient) the solve runs on the
+  calling thread; the GIL is held throughout and the FK is called directly.
+- For solvers that spawn native FK worker threads (memetic; signaled via
+  `IkSolver::spawns_fk_worker_threads()`):
+  - the solve runs on a dedicated native `solver_thread`;
+  - the **calling Python thread keeps the GIL for the entire solve** and
+    *pumps* a global FK request queue: native threads (solver + species +
+    gradient-descent) call **no CPython API** — they post their joint vector
+    to the queue and block on a plain C++ `std::condition_variable`; the pump
+    pops the requests and evaluates the Python FK under the GIL;
+  - all such solves are serialized process-wide by `g_fk_worker_mtx` (one
+    GIL owner pumping at a time; a Python FK is GIL-serialized anyway, so
+    serializing costs no real throughput).
+- This design was verified against a heavy stress matrix (up to 4 concurrent
+  Python worker threads × 15 rounds, each solve 4 species × 4 gradient-descent
+  threads, cheap and numpy-based FKs): zero crashes, zero hangs.
+
+### Post-mortem 1: GIL-owner thread-state corruption (fixed by the pump)
+
+The first design had every native FK call do
+`PyGILState_Ensure`/`PyGILState_Release`, while the calling thread did
+repeated `PyEval_SaveThread`/`PyEval_RestoreThread` around each solve.
+Under repeated solves this intermittently left CPython's GIL-owner thread
+state NULL, observed as `0xC0000005` NULL+8 / NULL+16 access violations
+inside `_PyEval_EvalFrameDefault` / `_PyObject_New` on a gradient-descent
+thread mid-FK-call. The FK pump (native threads never touching the
+interpreter) eliminated it.
+
+### Post-mortem 2: refcount race through upstream thread lambdas
+
+Upstream copies the FK `std::function` **by value** into per-generation
+gradient-descent thread lambdas (`ik_memetic.cpp`, one copy per elite per
+generation) and into per-species thread lambdas (`num_threads > 1`). If that
+function carries an *owning* `py::object` (as a naive binding would), every
+copy/destroy performs `Py_INCREF`/`Py_DECREF` on the Python FK callable from
+native threads, outside the GIL. With `num_threads = 1` the churn is
+sequential (safe by luck); with `num_threads > 1` several species threads do
+plain, unsynchronized refcount updates on the same object at once, lose
+updates, and the callable is deallocated on a native thread while the GIL
+owner is mid-bytecode — the same NULL+8/NULL+16 AV signatures as post-mortem
+1, but now appearing during lambda destruction on solver threads.
+
+**Fix:** the FK lambda captured in the solver carries only a **borrowed
+`PyObject*`** (`py::handle`); no refcount operation ever happens on a native
+thread. The owning reference is the caller's `fk` argument to `solve()`,
+which stays alive for the whole solve; every native thread the solve spawns
+is joined before `solve()` returns, so the borrowed pointer is never used
+after its owner dies.
+
+### Note: C-level CPython locks on this machine's Python
+
+The MS Store CPython 3.12.28 build on this machine returns
+`PY_LOCK_FAILURE` from `PyThread_acquire_lock(lock, WAIT_LOCK)` for an
+uncontended lock (reproduced by a self-test at module init), while the same
+lock works through Python's `threading.Lock`. The binding therefore uses a
+plain C++ `std::mutex` (`g_fk_worker_mtx`) for solve serialization instead
+of any CPython C-level lock; the GIL is still released with
+`PyEval_SaveThread`/`PyEval_RestoreThread` while waiting on it.
 
 ## Provenance
 

@@ -84,6 +84,22 @@ class IkSolver {
     virtual auto name() const -> std::string = 0;
 
     /**
+     * @brief Whether `solve` evaluates `link_fk` on native worker threads in
+     *        addition to the calling thread.
+     *
+     * Front-ends that hand the solver a thread-aware FK callback (e.g. the
+     * Python binding, whose callback must hold the interpreter GIL) use this to
+     * decide whether to release the GIL for the duration of `solve`. Solvers
+     * that spawn no FK-calling native threads report `false` and the callback
+     * runs only on the calling thread.
+     *
+     * @note The memetic solver reports `true` even for a single species thread,
+     *       because its gradient-descent exploitation always runs on separate
+     *       threads.
+     */
+    virtual auto spawns_fk_worker_threads() const -> bool { return false; }
+
+    /**
      * @brief Solve inverse kinematics for `targets` starting from `q_seed`.
      * @param robot      Kinematic limits / velocity specs of the n variables.
      * @param link_fk     Joint-frame + tip-frame forward kinematics.

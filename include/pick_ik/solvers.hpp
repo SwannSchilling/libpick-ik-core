@@ -87,6 +87,11 @@ class PickIkMemeticSolver final : public IkSolver {
 
     auto name() const -> std::string override { return "memetic"; }
 
+    // The memetic solver always evaluates the FK on native gradient-descent
+    // threads, regardless of num_threads, so the GIL must be released for the
+    // whole solve even in the single-species case.
+    auto spawns_fk_worker_threads() const -> bool override { return true; }
+
     auto solve(Robot const& robot,
                LinkFkFn const& link_fk,
                std::vector<Eigen::Vector3d> const& local_axes,
