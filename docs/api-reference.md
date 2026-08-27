@@ -8,9 +8,10 @@
 > Companion docs: `integration-roadmap.md` (per-app plan + performance
 > report), `../README.md` (threading model + crash post-mortems).
 >
-> **Status: 2026-07 — Phases 0–1 of the options rollout implemented**
-> (all solver options forwarded, `minimal_displacement_weight`, orientation
-> goals end-to-end incl. the quaternion-normalization fix; see §10).
+> **Status: 2026-07 — Phases 0–3 of the options rollout implemented**
+> (all solver options forwarded, `minimal_displacement_weight`,
+> `joint_angle_targets`, `look_at`, orientation goals end-to-end incl. the
+> quaternion-normalization fix; see §10).
 
 ---
 
@@ -80,7 +81,11 @@ Tip-only FK: `make_tip_fk(link_fk)` keeps the last frame.
 | `cost_threshold` | 1e-3 | solution-test cost threshold [cost units] |
 | `position_scale` | 1.0 | position weight in the pose cost |
 | `rotation_scale` | 0.5 | orientation weight in the pose cost (0.0 for position-only) |
-| `minimal_displacement_weight` | 0.0 | **Phase 1**: secondary "stay near the seed" objective (§4). 0.0 = original PickIK behavior; CCD ignores it |
+| `minimal_displacement_weight` | 0.0 | secondary "stay near the seed" objective (§2.4). 0.0 = original PickIK behavior; CCD ignores it |
+| `joint_angle_targets` | empty | **Phase 2**: one entry per joint, `nullopt` = no target; cost `Σ (qᵢ − targetᵢ)²` over specified joints, scaled by `joint_target_weight` |
+| `joint_target_weight` | 0.0 | weight of the joint-angle-targets goal (0.0 = off; CCD ignores) |
+| `look_at` | `nullopt` | **Phase 2**: `LookAtTarget{point, axis}` — point (base frame, m) + tip-frame axis to align with it; cost `(1 − axis_tip·dir)²`, scaled by `look_at_weight` |
+| `look_at_weight` | 0.0 | weight of the look-at goal (0.0 = off; CCD ignores) |
 
 ### 2.3 Solvers
 
@@ -116,27 +121,43 @@ search. 300 passes ≈ 1 s of POC runtime, 600 ≈ 2 s.
 | `stop_on_first_soln` | true | first valid solution vs. best after join |
 | `gd_params` | upstream defaults | embedded GradientIkParams — **not yet exposed** in the binding |
 
-### 2.4 Goal layer (`goal.hpp`) — secondary objectives
+### 2.4 Goal layer — secondary objectives
 
-Available in the core, wired into the PickIK wrappers via
-`SolveOptions.minimal_displacement_weight` (Phase 1):
+All wired into the PickIK wrappers (Phase 1–2); the CCD solver performs no
+cost-based search and ignores every goal:
 
-| Factory | Cost | Status |
-|---|---|---|
-| `make_minimal_displacement_cost_fn(robot, initial_guess)` | `Σ (q_i − seed_i)² · factor_i` | **wired** (Phase 1) |
-| `make_avoid_joint_limits_cost_fn(robot)` | penalizes proximity to limits | available, not yet an option |
-| `make_center_joints_cost_fn(robot)` | penalizes deviation from joint midpoints | available, not yet an option |
-| `make_pose_cost_fn(goal, link_index, pos_scale, rot_scale)` | per-frame pose cost (multi-frame capable) | tip frame in v1 |
-| arbitrary `Goal{eval, weight}` | any `q → cost` | the extension point for Phase 2 (per-joint, look-at) |
+| Goal | Cost | Option | Status |
+|---|---|---|---|
+| minimal displacement (upstream `goal.cpp`) | `Σ (q_i − seed_i)² · factor_i` | `minimal_displacement_weight` | **wired** |
+| joint angle targets | `Σ (q_i − target_i)²` over specified joints | `joint_angle_targets` + `joint_target_weight` | **wired** (Phase 2) |
+| look-at | `(1 − (R_tip·axis)·dir_to_point)²` | `look_at` + `look_at_weight` | **wired** (Phase 2) |
+| `make_avoid_joint_limits_cost_fn(robot)` | penalizes proximity to limits | — | available, not yet an option |
+| `make_center_joints_cost_fn(robot)` | penalizes deviation from joint midpoints | — | available, not yet an option |
+| `make_pose_cost_fn(goal, link_index, pos_scale, rot_scale)` | per-frame pose cost (multi-frame capable) | — | tip frame in v1 |
+
+**Practical guidance (measured):**
+* Joint targets on **load-bearing joints** (J2/J3/J4/J6 for this arm) are
+  weak constraints: moving them off their position-only optimum costs
+  position error, and the strict position threshold then rejects the
+  shifted multi-objective minimum (J4 → 0.5 rad at target B failed for
+  weights up to 0.3). **Near-null joints** (J1/J5/J7 roll/yaw) track their
+  targets almost exactly — the ctest/pytest use J5 +0.5 rad @ weight 0.3
+  and land within 0.06 rad (typically < 1e-4).
+* Look-at is a soft alignment objective: the residual angle trades off
+  against position via the weight. Weight 0.05 at target B kept position
+  < 1 mm with ~12° axis residual; raise the weight for tighter alignment.
 
 **Cost-scale note (important):** goals enter the cost as
 `goal.eval(q) · w²` and the solution test requires each goal term to stay
 below `cost_threshold²`. The squared position cost near convergence is
-~1e-6 (meters²), so realistic `minimal_displacement_weight` values are
-**~1e-3 (tie-breaker) to ~1e-2 (visible anchoring)**; the upstream plugin's
-example uses 0.001. For targets far from the seed, raise
-`cost_threshold` (it only widens the goal check) — e.g. the core test uses
-w = 0.01 with `cost_threshold` = 0.05.
+~1e-6 (meters²), so realistic weights are: `minimal_displacement_weight`
+**~1e-3 (tie-breaker) to ~1e-2 (visible anchoring)** (the upstream
+plugin's example uses 0.001); `joint_target_weight` **~0.1–0.5** for
+visible single-joint pull (the joint residual is O(1) rad, not O(m));
+`look_at_weight` **~0.01–0.1** (the alignment residual is O(0–2)). For
+secondary objectives far from their natural value, raise `cost_threshold`
+(it only widens the goal check) — e.g. the core tests use w = 0.01 /
+0.3 / 0.05 with `cost_threshold` 0.05–0.2.
 
 ---
 
@@ -155,9 +176,18 @@ solver = pickik.PickIkMemeticSolver(elite_size=4, population_size=16,
                                     num_threads=4, max_time=2.0)
 options = pickik.SolveOptions()
 options.minimal_displacement_weight = 0.001
+options.joint_angle_targets = [None, None, None, None, 0.5, None, None]
+options.joint_target_weight = 0.3
+options.look_at = pickik.LookAtTarget([1.5, 0.0, 0.45], [1.0, 0.0, 0.0])
+options.look_at_weight = 0.05
 result = solver.solve(robot, fk, local_axes, seed, [target_pose], options)
 # result: .success, .q, .position_error, .orientation_error
 ```
+
+* `make_robot(joints)` — plain-list constructor.
+* `LookAtTarget(point, axis=[1,0,0])` — `point` in base frame (m),
+  `axis` in tip-frame coordinates; read back via `.point` / `.axis`
+  (plain `[x, y, z]` lists).
 
 * `make_robot(joints)` — plain-list constructor.
 * Solvers: `CcdSolver(max_passes, damping, epsilon)`,
@@ -215,6 +245,8 @@ parentheses)**
 | `cost_threshold` | all | 1e-3 |
 | `position_scale` / `rotation_scale` | all | 1.0 / 0.5 |
 | `minimal_displacement_weight` | gradient, memetic | 0.0 |
+| `joint_angle_targets` (7 values, `null` = no target) + `joint_target_weight` | gradient, memetic | off / 0.0 |
+| `look_at` `{"point": [x,y,z] m, "axis": [x,y,z] (default +X)}` + `look_at_weight` | gradient, memetic | off / 0.0 |
 | `max_passes` / `damping` / `epsilon` | ccd | 300 / 0.1 / 1e-8 (service: 600 / 0.1) |
 | `step_size` / `min_cost_delta` / `max_time` / `max_iterations` / `stop_optimization_on_valid_solution` | gradient | 1e-4 / 1e-12 / 2.0 s / 2000 / true |
 | `elite_size` / `population_size` / `wipeout_fitness_tol` / `max_generations` / `max_time` / `num_threads` / `stop_optimization_on_valid_solution` / `stop_on_first_soln` | memetic | 4 / 16 / 1e-5 / 100 / 2.0 s / **1** / true / true |
@@ -250,6 +282,11 @@ parentheses)**
 * **Options panel** (Phase 0): `threads` 1–4 (default 1), `elite` 1–8
   (default 2), `mem s` 0.1–2.0 (default 0.6) — forwarded in `/solve`
   options; an **orientation field** accepts `x y z w` (empty = position-only).
+* **Secondary objectives** (Phase 2): seven **joint target** inputs
+  (J1–J7, rad, empty = off) + a **look-at point** (x/y/z in mm, empty =
+  off) with a **tip-axis dropdown** (+X/+Y/+Z, default +X), plus weight
+  sliders `md w` / `jt w` / `la w` for minimal displacement / joint
+  targets / look-at (all default 0 = off).
 * Re-solve triggers: target/joint/options/orientation change + 150 ms
   cooldown, one request in flight; status readout shows solver, error (mm
   + ° when orientation is tracked), solve time, service online/offline.
@@ -277,6 +314,11 @@ parentheses)**
    not reached within 20 s from the quantized-zero seed. Moderate target B
    + orientation solves in ~0.3–2 s. Raise `max_time`/`max_generations`
    or seed from a nearby pose for the hard cases.
+8. Stacking several secondary objectives (e.g. minimal displacement +
+   joint target + look-at at once) can exceed what a short memetic budget
+   finds — the objectives are soft cost terms, and the strict
+   position/orientation test still gates success. Use the gradient solver
+   or a larger budget when combining them.
 
 ---
 
@@ -324,6 +366,18 @@ Readings:
 * Small elite (1–2) is the interactive sweet spot; elite 4 gives the
   tightest position error on hard targets.
 
+**Secondary-objective overhead (Phase 3, through the service, target B,
+3 repeats, median):**
+
+| Solve | median | note |
+|---|---|---|
+| gradient plain | 17 ms | |
+| gradient + minimal displacement (w 0.01) | 17 ms | no extra FK — arithmetic goal |
+| gradient + joint target (J5, w 0.3) | 18 ms | no extra FK — arithmetic goal |
+| gradient + look-at (+X, w 0.05) | 126 ms | +1 FK per cost evaluation |
+| memetic plain (nt=1, elite=2) | 57 ms | |
+| memetic + minimal displacement (w 0.01) | 56 ms | no extra FK |
+
 ---
 
 ## 8. Threading invariants (do not regress)
@@ -342,15 +396,22 @@ Readings:
 
 ## 9. Verification matrix (last green run)
 
-* Core ctest: **24 cases / 252 assertions** (incl. the Phase 1
-  `minimal_displacement_weight` case).
-* Service pytest: **37 tests** (FK anchors, binding surface, API, option
+* Core ctest: **26 cases / 266 assertions** (incl. Phase 1
+  `minimal_displacement_weight`, Phase 2 joint-angle-targets + look-at
+  cases, wrong-size target rejection).
+* Service pytest: **41 tests** (FK anchors, binding surface, API, option
   forwarding, orientation goals incl. the quaternion-normalization
-  regression + zero-quaternion rejection).
+  regression + zero-quaternion rejection, joint-target + look-at
+  pass-through/effect + 422 validation).
 * Crash regression: memetic storm matrix 0 bad across ~40 runs; API burst
-  0/10; browser demo 0.2 mm / ~330 ms; p5 sketch end-to-end verified —
-  incl. full-pose solve from the sketch: target B + rounded yaw-90
-  quaternion, `memetic OK 0.83 mm +0.04° in 593 ms`.
+  0/10; browser demo 0.2 mm / ~330 ms.
+* p5 sketch end-to-end (Phase 3): target B + rounded yaw-90 quaternion
+  `memetic OK 0.83 mm +0.04° in 593 ms`; J5 joint target from the sketch
+  `gradient OK 0.82 mm in 24 ms` (q5 = 0.4942 vs target 0.4935); look-at
+  point (1500, 0, 450) mm with the +Z axis dropdown `gradient OK 0.13 mm
+  in 852 ms` (tip +Z · dir = 0.98).
+* Web demo (Phase 3): options mirror verified live (J5 target 0.49 rad →
+  `gradient OK 0.83 mm in 23 ms`, q5 = 28.07° ≈ 0.49 rad).
 
 ---
 
@@ -360,8 +421,8 @@ Readings:
 |---|---|---|
 | 0 | Forward every existing solver option through the service; p5 options panel + orientation input; elite × threads sweep; **quaternion normalization fix** (service + sketch client) | ✅ done (this file's §4–§7) |
 | 1 | `SolveOptions.minimal_displacement_weight` (contract → binding → service → sketch); ctest + pytest | ✅ done |
-| 2 | Per-joint orientation targets (`joint_angle_targets`) + look-at goal as `Goal` costs in the wrapper | ⏳ planned (design: `Goal{eval,weight}` extension point, §2.4; sketch UI: "wrist yaw" slider + look-at gizmo) |
-| 3 | Re-measure perf with new options; mirror options panel in the web demo; update roadmap defaults | ⏳ planned |
+| 2 | Per-joint angle targets (`joint_angle_targets` + weight) + look-at goal (`look_at` + weight) as `Goal` costs in the wrapper; binding `LookAtTarget`; ctest + pytest | ✅ done |
+| 3 | Re-measure perf with new options; mirror options panel in the web demo + sketch secondary-objective UI; update docs | ✅ done |
 
 ---
 

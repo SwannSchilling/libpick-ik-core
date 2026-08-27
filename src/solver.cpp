@@ -31,6 +31,41 @@ auto orientation_error(Eigen::Matrix3d const& a, Eigen::Matrix3d const& b) -> do
     return std::acos(c);
 }
 
+/// Per-joint angle targets: `sum_i (q_i - target_i)^2` over the specified
+/// joints (`std::nullopt` entries are skipped).
+auto make_joint_angle_targets_cost_fn(std::vector<std::optional<double>> const& targets)
+    -> CostFn {
+    return [targets](std::vector<double> const& q) -> double {
+        double cost = 0.0;
+        for (size_t i = 0; i < targets.size() && i < q.size(); ++i) {
+            if (!targets[i].has_value()) continue;
+            double const dq = q[i] - *targets[i];
+            cost += dq * dq;
+        }
+        return cost;
+    };
+}
+
+/// Look-at: `(1 - (R_tip * axis) . dir_to_point)^2`, 0.0 = perfectly
+/// aligned. Re-evaluates the tip frame, so it costs one extra FK call per
+/// cost evaluation.
+auto make_look_at_cost_fn(FkFn const& tip_fk, LookAtTarget const& target) -> CostFn {
+    Eigen::Vector3d axis = target.axis;
+    if (axis.norm() < 1e-12) axis = Eigen::Vector3d(1.0, 0.0, 0.0);
+    axis.normalize();
+    return [tip_fk, target, axis](std::vector<double> const& q) -> double {
+        auto const frames = tip_fk(q);
+        auto const& tip = frames.back();
+        Eigen::Vector3d const to_point = target.point - tip.translation();
+        double const dist = to_point.norm();
+        if (dist < 1e-9) return 0.0;  // tip at the point: trivially aligned
+        Eigen::Vector3d const dir = to_point / dist;
+        double const dot = (tip.rotation() * axis).dot(dir);  // in [-1, 1]
+        double const err = 1.0 - dot;
+        return err * err;
+    };
+}
+
 /// Fill `result` with the position/orientation errors of `q` vs. `targets`.
 void fill_errors(IkResult& result,
                  FkFn const& tip_fk,
@@ -72,6 +107,24 @@ auto solve_with_pickik(Robot const& robot,
         goals.push_back(
             Goal{make_minimal_displacement_cost_fn(robot, q_seed),
                  options.minimal_displacement_weight});
+    }
+    if (!options.joint_angle_targets.empty()) {
+        if (options.joint_angle_targets.size() != robot.variables.size()) {
+            throw std::invalid_argument(
+                "joint_angle_targets must have one entry per joint");
+        }
+        bool const any_target = std::any_of(options.joint_angle_targets.begin(),
+                                            options.joint_angle_targets.end(),
+                                            [](auto const& t) { return t.has_value(); });
+        if (any_target && options.joint_target_weight > 0.0) {
+            goals.push_back(Goal{make_joint_angle_targets_cost_fn(
+                                  options.joint_angle_targets),
+                                 options.joint_target_weight});
+        }
+    }
+    if (options.look_at.has_value() && options.look_at_weight > 0.0) {
+        goals.push_back(Goal{make_look_at_cost_fn(tip_fk, *options.look_at),
+                             options.look_at_weight});
     }
     auto const solution_fn =
         make_is_solution_test_fn(frame_tests, goals, options.cost_threshold, tip_fk);

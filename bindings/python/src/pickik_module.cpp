@@ -335,6 +335,35 @@ PYBIND11_MODULE(pickik, m) {
         },
         py::arg("joints"), "Create a Robot from plain joint specifications.");
 
+    // ------------------------------------------------------- LookAtTarget
+    auto to_array3 = [](Eigen::Vector3d const& v) -> std::array<double, 3> {
+        return std::array<double, 3>{v.x(), v.y(), v.z()};
+    };
+    py::class_<pick_ik::LookAtTarget>(m, "LookAtTarget")
+        .def(
+            py::init(
+                [](std::array<double, 3> const& point,
+                   std::array<double, 3> const& axis) {
+                    pick_ik::LookAtTarget t;
+                    t.point = Eigen::Vector3d(point[0], point[1], point[2]);
+                    t.axis = Eigen::Vector3d(axis[0], axis[1], axis[2]);
+                    return t;
+                }),
+            py::arg("point"),
+            py::arg("axis") = std::array<double, 3>{1.0, 0.0, 0.0},
+            "Point the tip frame's `axis` (tip-frame coordinates) at "
+            "`point` (base frame, meters).")
+        .def_property_readonly(
+            "point", [to_array3](pick_ik::LookAtTarget const& t) {
+                return to_array3(t.point);
+            },
+            "Look-at point (base frame, meters).")
+        .def_property_readonly(
+            "axis", [to_array3](pick_ik::LookAtTarget const& t) {
+                return to_array3(t.axis);
+            },
+            "Tip-frame axis to align with the point.");
+
     // ------------------------------------------------------------- Options
     py::class_<pick_ik::SolveOptions>(m, "SolveOptions")
         .def(py::init<>())
@@ -356,7 +385,24 @@ PYBIND11_MODULE(pickik, m) {
                        "Secondary objective: pull the solution toward the seed "
                        "(upstream 'minimal_displacement_weight'). 0.0 disables "
                        "it. Applies to the gradient/memetic solvers; CCD ignores "
-                       "it.");
+                       "it.")
+        .def_readwrite(
+            "joint_angle_targets",
+            &pick_ik::SolveOptions::joint_angle_targets,
+            "Per-joint angle targets: one entry per joint, None = no target "
+            "for that joint, e.g. [None, None, 0.5, None, None, None, None] "
+            "anchors J3 at 0.5 rad. Weighted by joint_target_weight; empty "
+            "list disables. Gradient/memetic only; CCD ignores.")
+        .def_readwrite("joint_target_weight", &pick_ik::SolveOptions::joint_target_weight,
+                       "Weight of the joint angle targets goal "
+                       "(0.0 disables; realistic ~1e-3..1e-2).")
+        .def_readwrite("look_at", &pick_ik::SolveOptions::look_at,
+                       "LookAtTarget to point the tip at (None disables); "
+                       "weighted by look_at_weight. Adds one FK call per cost "
+                       "evaluation. Gradient/memetic only; CCD ignores.")
+        .def_readwrite("look_at_weight", &pick_ik::SolveOptions::look_at_weight,
+                       "Weight of the look-at goal (0.0 disables; realistic "
+                       "~1e-3..1e-2).");
 
     // ------------------------------------------------------------------ Result
     py::class_<pick_ik::IkResult>(m, "IkResult")

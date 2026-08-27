@@ -261,6 +261,108 @@ TEST_CASE("minimal_displacement_weight pulls the solution toward the seed",
     REQUIRE(zero_result.q == plain_result.q);
 }
 
+TEST_CASE("joint_angle_targets pulls the targeted joint toward its angle",
+          "[solver][joint_targets]") {
+    // Position-only goal + a secondary target on J5 (index 4, forearm
+    // roll): the solution must end up much closer to the target angle than
+    // a plain solve, with the position still solved.
+    //
+    // Why J5 and not, say, J4: at target B the position-only optimum pins
+    // the load-bearing joints (J4 lands ~1.78 rad). Pushing a load-bearing
+    // joint off its natural value costs position error, and the strict
+    // position threshold then rejects the shifted multi-objective minimum
+    // (measured: J4 -> 0.5 rad fails for w up to 0.3). J5 is a near-null
+    // joint for the position, so it tracks its target almost exactly.
+    auto link_fk = arm7::make_link_fk();
+    auto axes = arm7::make_local_axes();
+    auto const target = target_b();
+    auto const seed = quantized_zero_seed();
+    auto const robot = arm7_robot();
+
+    pick_ik::GradientIkParams params;
+    params.max_time = 2.0;
+    params.max_iterations = 2000;
+    pick_ik::PickIkGradientSolver gd(params);
+
+    pick_ik::SolveOptions plain = pos_only();
+    auto const plain_result = gd.solve(robot, link_fk, axes, seed, {target}, plain);
+    REQUIRE(plain_result.success);
+
+    // Target J5 0.5 rad away from where the plain solve left it.
+    double const j5_target = plain_result.q[4] + 0.5;
+    std::vector<std::optional<double>> const targets = {
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+        j5_target, std::nullopt, std::nullopt};
+    pick_ik::SolveOptions targeted = pos_only();
+    targeted.joint_angle_targets = targets;
+    targeted.joint_target_weight = 0.3;
+    targeted.cost_threshold = 0.2;  // goal check needs room (see solver.hpp)
+    auto const targeted_result =
+        gd.solve(robot, link_fk, axes, seed, {target}, targeted);
+
+    REQUIRE(targeted_result.success);
+    REQUIRE(targeted_result.position_error < 5e-3);
+    REQUIRE(robot.is_valid_configuration(targeted_result.q));
+    // J5 must land near its target ...
+    REQUIRE(std::abs(targeted_result.q[4] - j5_target) < 0.05);
+    // ... and clearly closer than the plain solve (plain is ~0.5 rad off).
+    REQUIRE(std::abs(targeted_result.q[4] - j5_target) <
+            std::abs(plain_result.q[4] - j5_target));
+    // And it must actually change the solution.
+    REQUIRE_FALSE(targeted_result.q == plain_result.q);
+
+    // A wrong-size target list is a contract error.
+    pick_ik::SolveOptions bad = pos_only();
+    bad.joint_angle_targets = {0.1, 0.2, 0.3};
+    REQUIRE_THROWS_AS(
+        gd.solve(robot, link_fk, axes, seed, {target}, bad),
+        std::invalid_argument);
+}
+
+TEST_CASE("look_at aligns the tip axis with the point", "[solver][look_at]") {
+    // Position-only goal + a look-at point far in +X: the tip's +X axis
+    // must point closer at the point than in a plain solve.
+    auto link_fk = arm7::make_link_fk();
+    auto axes = arm7::make_local_axes();
+    auto const target = target_b();
+    auto const seed = quantized_zero_seed();
+    auto const robot = arm7_robot();
+    auto const tip_fk = pick_ik::make_tip_fk(link_fk);
+
+    pick_ik::GradientIkParams params;
+    params.max_time = 2.0;
+    params.max_iterations = 2000;
+    pick_ik::PickIkGradientSolver gd(params);
+
+    pick_ik::SolveOptions plain = pos_only();
+    auto const plain_result = gd.solve(robot, link_fk, axes, seed, {target}, plain);
+
+    pick_ik::SolveOptions looking = pos_only();
+    pick_ik::LookAtTarget la;
+    la.point = Eigen::Vector3d(1.5, 0.0, 0.45);
+    la.axis = Eigen::Vector3d(1.0, 0.0, 0.0);  // tip +X at the point
+    looking.look_at = la;
+    looking.look_at_weight = 0.05;
+    looking.cost_threshold = 0.05;  // goal check scale, see the md test
+    auto const looking_result =
+        gd.solve(robot, link_fk, axes, seed, {target}, looking);
+
+    REQUIRE(plain_result.success);
+    REQUIRE(looking_result.success);
+    REQUIRE(looking_result.position_error < 5e-3);
+    REQUIRE(robot.is_valid_configuration(looking_result.q));
+
+    auto const alignment = [&](std::vector<double> const& q) {
+        auto const tip = tip_fk(q);
+        Eigen::Vector3d const dir =
+            (la.point - tip[0].translation()).normalized();
+        return (tip[0].rotation() * Eigen::Vector3d::UnitX()).dot(dir);
+    };
+    REQUIRE(alignment(looking_result.q) > alignment(plain_result.q));
+    // And it must actually change the solution.
+    REQUIRE_FALSE(looking_result.q == plain_result.q);
+}
+
 // Full-pose goals (position + orientation) are exercised end-to-end by the
 // service pytest (tests/test_api.py); the quaternion normalization
 // regression test there covers the non-orthogonal-matrix failure mode found

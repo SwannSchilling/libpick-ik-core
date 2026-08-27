@@ -31,6 +31,16 @@ using LinkFkFn = std::function<std::vector<Eigen::Isometry3d>(std::vector<double
 /** @brief Derive a tip-only `FkFn` from a `LinkFkFn` (keeps the last frame). */
 auto make_tip_fk(LinkFkFn link_fk) -> FkFn;
 
+/**
+ * @brief Look-at secondary objective: point the tip frame's `axis`
+ *        (expressed in the tip frame) at `point` (base frame, meters).
+ *        `axis` is normalized on use.
+ */
+struct LookAtTarget {
+    Eigen::Vector3d point{0.0, 0.0, 0.0};
+    Eigen::Vector3d axis{1.0, 0.0, 0.0};
+};
+
 /** @brief Common options for `IkSolver::solve`. */
 struct SolveOptions {
     /// Position error threshold [m] at which a configuration counts as a solution.
@@ -62,6 +72,30 @@ struct SolveOptions {
      *       solver ignores it (it performs no cost-based search).
      */
     double minimal_displacement_weight = 0.0;
+    /**
+     * @brief Per-joint angle secondary objective. One entry per joint;
+     *        `std::nullopt` means "no target for this joint". The added
+     *        cost is `sum_i (q_i - target_i)^2` over the specified joints,
+     *        scaled by `joint_target_weight` (same cost-units caveats as
+     *        `minimal_displacement_weight`). Empty vector = disabled.
+     *        Applied by the PickIK (gradient/memetic) wrappers; the CCD
+     *        solver ignores it.
+     */
+    std::vector<std::optional<double>> joint_angle_targets;
+    /// Weight of the joint angle targets goal (0.0 disables; same caveats).
+    double joint_target_weight = 0.0;
+    /**
+     * @brief Look-at secondary objective (see `LookAtTarget`); scaled by
+     *        `look_at_weight` (same cost-units caveats). The goal cost is
+     *        `(1 - axis_tip . dir_to_point)^2`, so 0.0 = perfectly aligned.
+     *        `std::nullopt` = disabled. The goal re-evaluates the tip
+     *        frame, so it adds one FK call per cost evaluation. Applied by
+     *        the PickIK (gradient/memetic) wrappers; the CCD solver
+     *        ignores it.
+     */
+    std::optional<LookAtTarget> look_at;
+    /// Weight of the look-at goal (0.0 disables; same caveats).
+    double look_at_weight = 0.0;
 };
 
 /** @brief Result of an `IkSolver::solve` call. */

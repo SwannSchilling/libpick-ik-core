@@ -8,8 +8,9 @@ get with a native integration of the pick_ik API instead of the service?"*
 Companion: **`api-reference.md`** — the durable option/API reference
 (SolveOptions, all solver parameters, binding + service option tables,
 p5 integration, threading invariants, build cheatsheet). Options-rollout
-Phases 0–1 (forwarding every solver option, `minimal_displacement_weight`,
-orientation goals end-to-end) are implemented; see `api-reference.md` §10.
+Phases 0–3 (forwarding every solver option, `minimal_displacement_weight`,
+`joint_angle_targets`, `look_at`, orientation goals end-to-end, web-demo
+mirror) are implemented; see `api-reference.md` §10.
 
 ## 1. What we have today
 
@@ -217,8 +218,12 @@ the option tables live in `api-reference.md` §4/§7.
   (nt=1, elite=2).
 - `minimal_displacement_weight` (Phase 1) available for all service
   solvers — the tool to test the "arm jumps to a random pose" fix.
-- Web demo (`ik_service/web`): solver dropdown + 2D live view + FK readout
-  (options panel mirrored there in Phase 3).
+- Secondary objectives (Phase 2/3): per-joint angle targets (J1–J7
+  inputs, rad) + look-at point (x/y/z mm) with a tip-axis dropdown
+  (+X/+Y/+Z), each with its own weight slider — all off by default.
+- Web demo (`ik_service/web`): solver dropdown + 2D live view + FK
+  readout; options mirrored (memetic threads/elite/time, all three
+  secondary-objective weights, joint targets, look-at + axis).
 - Both are service consumers: performance ≈ §2.2 row 2, which is fine for
   event-driven UI solves.
 
