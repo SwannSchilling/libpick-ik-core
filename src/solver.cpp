@@ -67,7 +67,12 @@ auto solve_with_pickik(Robot const& robot,
                        SolveFn const& solve_fn) -> IkResult {
     auto const frame_tests =
         make_frame_tests(targets, options.position_threshold, options.orientation_threshold);
-    std::vector<Goal> const goals;
+    std::vector<Goal> goals;
+    if (options.minimal_displacement_weight > 0.0) {
+        goals.push_back(
+            Goal{make_minimal_displacement_cost_fn(robot, q_seed),
+                 options.minimal_displacement_weight});
+    }
     auto const solution_fn =
         make_is_solution_test_fn(frame_tests, goals, options.cost_threshold, tip_fk);
     auto const pose_costs =

@@ -5,6 +5,12 @@ target (Blender, Unity, PyBullet, IsaacSim, ROS 2/robot, browser/p5) will
 look like, and a measured performance report answering *"what speeds do we
 get with a native integration of the pick_ik API instead of the service?"*
 
+Companion: **`api-reference.md`** — the durable option/API reference
+(SolveOptions, all solver parameters, binding + service option tables,
+p5 integration, threading invariants, build cheatsheet). Options-rollout
+Phases 0–1 (forwarding every solver option, `minimal_displacement_weight`,
+orientation goals end-to-end) are implemented; see `api-reference.md` §10.
+
 ## 1. What we have today
 
 ```
@@ -49,8 +55,13 @@ p5.js sketch / browser / Python / Blender / Unity / PyBullet / IsaacSim / robot
 | Host path | FK | CCD (600 passes) | Gradient (2 s / 2000 it) | Memetic (4 species) |
 |---|---|---|---|---|
 | p5 sketch, browser | JS, in-page | ~35 FK calls/frame, iterative: converges, but stalls **~15–35 mm short** on target A — an artifact of the p5 sliders' 0.01 rad quantization, not the CCD math | — | — |
-| `ik_service` (HTTP + Python/numpy FK through the GIL pump) | Python, ~49 µs/call measured | **235–345 ms** | **~11 ms** | **285–490 ms** |
+| `ik_service` (HTTP + Python/numpy FK through the GIL pump) | Python, ~49 µs/call measured | **235–345 ms** | **~11 ms** | **55–640 ms** (option-dependent; 4-species baseline 285–490 ms) |
 | Native C++ host (`arm7_cross_check` Part 4, C++ FK) | C++, ~0.5 µs/call | **1.9–2.3 ms** | **0.3–0.6 ms** | **2.7–22.6 ms** |
+
+> Phase 0 note: the service's default `num_threads` changed from 4 to 1
+> after the §2.5 sweep (with a Python FK, extra species only add pump
+> traffic). The single-species service memetic baseline on the same
+> targets is ~55–190 ms at elite 1–4.
 
 Supporting measurements:
 
@@ -89,6 +100,42 @@ Rule of thumb: **every 1000 FK calls cost ~50–70 ms with a Python FK and
 ~0.5–1 ms with a native FK.** To get millisecond-class times from a
 Python-hosted app, the FK has to move into C++ (a compiled arm7 model,
 §3.0 b) — the solver API stays the same either way.
+
+### 2.5 Memetic option sweep (elite_size × num_threads, Phase 0)
+
+All solver options are now forwardable through the service and the p5
+sketch (§3.5), so a sweep of `elite_size` × `num_threads` was measured
+through the live service (5 repeats per point, median; position-only,
+quantized-zero seed, `max_time` 2 s). Key points of the 3×4×2 grid:
+
+| target | nt | elite | success | median solve | max pos err |
+|---|---|---|---|---|---|
+| A | 1 | 1 | 5/5 | 109 ms | 0.99 mm |
+| A | 1 | 2 | 5/5 | 163 ms | 0.90 mm |
+| A | 1 | 4 | 5/5 | 116 ms | 0.07 mm |
+| A | 4 | 4 | 5/5 | 284 ms | 0.58 mm |
+| B | 1 | 1 | 5/5 | 56 ms | 0.05 mm |
+| B | 1 | 2 | 5/5 | 58 ms | 0.44 mm |
+| B | 1 | 4 | 5/5 | 117 ms | 0.60 mm |
+| B | 4 | 4 | 5/5 | 361 ms | 0.67 mm |
+
+Readings:
+
+1. **24/24 combinations succeed** — quality (position error) tracks
+   `elite_size` (more elites → more gradient exploitation → tighter
+   error), speed tracks it inversely, and `stop_on_first_soln` makes the
+   fastest species win the race.
+2. **With a Python FK, `num_threads > 1` is counterproductive**: every
+   species' FK calls serialize through the GIL pump, so extra species add
+   queue traffic instead of parallelism (B: 56 ms at nt=1 → 361 ms at
+   nt=4, same elite). The service default was therefore changed from 4 to
+   1; **native FK hosts (Unity, ROS 2, batch) should keep raising it.**
+3. Interactive sweet spot: **nt=1, elite 1–2** (~55–165 ms, well under a
+   frame budget if needed, plenty of margin for the sketch's 150 ms
+   cooldown). Elite 4 gives the tightest error on hard targets.
+
+Full grid captured at `URDF_BIO_IK/.tmp/elite_sweep.json` (transient);
+the option tables live in `api-reference.md` §4/§7.
 
 ## 3. Integration roadmap
 
@@ -164,7 +211,14 @@ Python-hosted app, the FK has to move into C++ (a compiled arm7 model,
 - p5 POC sketch: solver dropdown (in-browser CCD + the three service
   solvers), interactive IK target sliders, joint sliders act as the seed,
   live status/error readout, service health indicator.
-- Web demo (`ik_service/web`): solver dropdown + 2D live view + FK readout.
+- Options panel (Phase 0): `threads`/`elite`/`mem s` sliders forwarded to
+  the service; orientation field (`x y z w`) for full-pose goals; status
+  shows position + orientation error. Defaults follow the §2.5 sweep
+  (nt=1, elite=2).
+- `minimal_displacement_weight` (Phase 1) available for all service
+  solvers — the tool to test the "arm jumps to a random pose" fix.
+- Web demo (`ik_service/web`): solver dropdown + 2D live view + FK readout
+  (options panel mirrored there in Phase 3).
 - Both are service consumers: performance ≈ §2.2 row 2, which is fine for
   event-driven UI solves.
 

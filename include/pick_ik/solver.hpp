@@ -43,6 +43,25 @@ struct SolveOptions {
     double position_scale = 1.0;
     /// Orientation weight of the pose cost function.
     double rotation_scale = 0.5;
+    /**
+     * @brief Secondary "stay close to the seed" objective. 0.0 disables it
+     *        (default; preserves the original PickIK behavior). > 0 adds
+     *        `make_minimal_displacement_cost_fn` to the cost, so solutions
+     *        prefer configurations near `q_seed` — the upstream PickIK
+     *        plugin's `minimal_displacement_weight` (without it,
+     *        position-only solves can jump to a different branch of the
+     *        solution manifold on every run).
+     *
+     * @note Cost units: the goal is added to the pose cost as
+     *       `goal.eval(q) * w^2`, and the solution test requires it to stay
+     *       below `cost_threshold^2` (1e-6 by default) — while the squared
+     *       position cost near convergence is ~1e-6..1e-9, so realistic
+     *       weights are ~1e-3 (tie-breaker) to ~1e-2 (visible anchoring);
+     *       much larger values push the position off threshold.
+     *       Applied by the PickIK (gradient/memetic) wrappers; the CCD
+     *       solver ignores it (it performs no cost-based search).
+     */
+    double minimal_displacement_weight = 0.0;
 };
 
 /** @brief Result of an `IkSolver::solve` call. */

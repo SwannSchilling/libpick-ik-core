@@ -350,7 +350,13 @@ PYBIND11_MODULE(pickik, m) {
                        "Position weight of the pose cost function.")
         .def_readwrite("rotation_scale", &pick_ik::SolveOptions::rotation_scale,
                        "Orientation weight of the pose cost function "
-                       "(use 0.0 for position-only goals).");
+                       "(use 0.0 for position-only goals).")
+        .def_readwrite("minimal_displacement_weight",
+                       &pick_ik::SolveOptions::minimal_displacement_weight,
+                       "Secondary objective: pull the solution toward the seed "
+                       "(upstream 'minimal_displacement_weight'). 0.0 disables "
+                       "it. Applies to the gradient/memetic solvers; CCD ignores "
+                       "it.");
 
     // ------------------------------------------------------------------ Result
     py::class_<pick_ik::IkResult>(m, "IkResult")

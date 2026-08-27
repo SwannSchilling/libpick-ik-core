@@ -197,3 +197,72 @@ TEST_CASE("Gradient wrapper matches the upstream free function", "[solver][gradi
     REQUIRE(via_contract.success);
     REQUIRE(via_contract.q == direct.value());  // deterministic: identical path
 }
+
+TEST_CASE("minimal_displacement_weight pulls the solution toward the seed",
+          "[solver][minimal_displacement]") {
+    // Position-only goal: without the secondary objective the gradient solver
+    // is free to move any joint to wherever the position is cheapest; with
+    // minimal_displacement_weight > 0 the solution must be closer to the
+    // seed (the upstream PickIK plugin's minimal_displacement_weight).
+    auto link_fk = arm7::make_link_fk();
+    auto axes = arm7::make_local_axes();
+    auto const target = target_b();
+    auto const seed = quantized_zero_seed();
+    auto const robot = arm7_robot();
+
+    pick_ik::GradientIkParams params;
+    params.max_time = 2.0;
+    params.max_iterations = 2000;
+
+    /*
+     * Weight scale: the solution test requires goal.eval(q) * w^2 to stay
+     * below cost_threshold^2. From the zero seed, target B costs
+     * sum(dq^2) ~ 3, so w = 0.01 needs cost_threshold^2 > 3e-4 — the
+     * test raises cost_threshold to 0.05 (a legitimate user option; it
+     * only widens the goal check, the position threshold is unchanged).
+     */
+
+    pick_ik::PickIkGradientSolver gd(params);
+    pick_ik::SolveOptions plain = pos_only();
+    auto const plain_result = gd.solve(robot, link_fk, axes, seed, {target}, plain);
+
+    pick_ik::SolveOptions anchored = pos_only();
+    anchored.minimal_displacement_weight = 0.01;
+    anchored.cost_threshold = 0.05;
+    auto const anchored_result =
+        gd.solve(robot, link_fk, axes, seed, {target}, anchored);
+
+    REQUIRE(plain_result.success);
+    REQUIRE(anchored_result.success);
+    REQUIRE(anchored_result.position_error < 5e-3);  // position still nearly solved
+    REQUIRE(robot.is_valid_configuration(anchored_result.q));
+
+    // The anchored solve must find a better point of the *anchored* cost
+    // than the plain solution does. (A strict "closer to the seed in L2"
+    // assertion is NOT guaranteed: the multi-objective minimum may trade a
+    // tiny pose-cost improvement for more displacement — both results sit
+    // far inside the position threshold, so the optimality of the anchored
+    // cost is the correct invariant.)
+    auto const tip_fk = pick_ik::make_tip_fk(link_fk);
+    auto const pose_costs =
+        pick_ik::make_pose_cost_functions({target}, 1.0, 0.0);
+    auto const anchored_cost = pick_ik::make_cost_fn(
+        pose_costs,
+        std::vector<pick_ik::Goal>{
+            {pick_ik::make_minimal_displacement_cost_fn(robot, seed), 0.01}},
+        tip_fk);
+    REQUIRE(anchored_cost(anchored_result.q) < anchored_cost(plain_result.q));
+    // The option must actually change the solution.
+    REQUIRE_FALSE(anchored_result.q == plain_result.q);
+    // A zero weight must behave exactly like the pre-option behavior.
+    pick_ik::SolveOptions explicit_zero = pos_only();
+    explicit_zero.minimal_displacement_weight = 0.0;
+    auto const zero_result = gd.solve(robot, link_fk, axes, seed, {target}, explicit_zero);
+    REQUIRE(zero_result.q == plain_result.q);
+}
+
+// Full-pose goals (position + orientation) are exercised end-to-end by the
+// service pytest (tests/test_api.py); the quaternion normalization
+// regression test there covers the non-orthogonal-matrix failure mode found
+// in Phase 0 (rounded user quaternions made the orientation goal
+// unreachable under the 1e-3 rad threshold).
