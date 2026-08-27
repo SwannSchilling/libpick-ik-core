@@ -216,6 +216,7 @@ CORS: `*` (the p5 sketch may call from `file://`, Origin: null).
 | `GET /health` | status + arm + FK backend |
 | `GET /` | web demo page |
 | `GET /lib/{filename}` | static assets for the web demo (vendored `p5.js` — no CDN) |
+| `GET /model/{path}` | robot description assets (`ik_service/robot_description/`: URDFs + STL meshes), same path-traversal guard as `/lib/*` |
 
 **`/solve` request**
 
@@ -299,6 +300,16 @@ parentheses)**
   drag-orbit / wheel-zoom and **top / front / side / angled** preset
   buttons. p5 v2.3.2 is vendored at `web/lib/p5.js` and served via
   `GET /lib/{filename}` (no CDN dependency).
+  The robot is **URDF-driven**: the viewer loads
+  `GET /model/{model}.urdf` from `ik_service/robot_description/`
+  (default model `arm7`, override via `?model=name`) and places each
+  link's visuals (box / sphere / cylinder / cone / STL mesh) at the
+  matching `/fk` frame. STLs (binary or ASCII, meters, `scale`
+  honored) live in `robot_description/meshes/`; the folder is the
+  drop-in point for real mesh files — no viewer or service code
+  changes needed (see `robot_description/README.md`). Caveat: the
+  URDF drives the *visuals*; the solver's kinematics stay hardcoded
+  in the C++ core (`arm7_fk.hpp`) until the core is URDF-driven.
   Note: p5's WebGL world is pixel-scale at the default camera with a
   near-clip plane a few units ahead of the camera — the demo therefore
   draws the model at 300 px/m and keeps the camera at pixel-scale

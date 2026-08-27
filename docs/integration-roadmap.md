@@ -225,7 +225,10 @@ the option tables live in `api-reference.md` §4/§7.
   (p5.js WebGL, drag-orbit / wheel-zoom / top–front–side–angled presets,
   vendored p5.js served from the service) + FK readout; options mirrored
   (memetic threads/elite/time, all three secondary-objective weights,
-  joint targets, look-at + axis).
+  joint targets, look-at + axis). The 3D view is URDF-driven: the robot
+  is loaded from `ik_service/robot_description/` (`GET /model/*`,
+  default `arm7`, `?model=name` to switch; STL meshes under
+  `robot_description/meshes/`).
 - Both are service consumers: performance ≈ §2.2 row 2, which is fine for
   event-driven UI solves.
 
