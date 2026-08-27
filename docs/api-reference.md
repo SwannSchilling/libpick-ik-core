@@ -299,6 +299,11 @@ parentheses)**
   drag-orbit / wheel-zoom and **top / front / side / angled** preset
   buttons. p5 v2.3.2 is vendored at `web/lib/p5.js` and served via
   `GET /lib/{filename}` (no CDN dependency).
+  Note: p5's WebGL world is pixel-scale at the default camera with a
+  near-clip plane a few units ahead of the camera — the demo therefore
+  draws the model at 300 px/m and keeps the camera at pixel-scale
+  distances (the same trick the p5 POC sketch uses); a camera placed a
+  couple of "meters" away clips the entire scene.
 
 ---
 
