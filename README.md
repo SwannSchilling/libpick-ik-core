@@ -30,6 +30,7 @@ src/
 extern/rsl/          vendored byte-identical RSL random/queue sources (see LICENSE note)
 tests/               Catch2 tests, no MoveIt (hand-written FK models)
 bindings/python/     optional pybind11 module `pickik` (PICK_IK_CORE_BUILD_PYTHON, default OFF)
+docs/                integration roadmap + performance report (Blender/Unity/ROS/sim)
 ```
 
 ## Example: `arm7_cross_check`
