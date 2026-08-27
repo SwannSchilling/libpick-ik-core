@@ -303,7 +303,11 @@ parentheses)**
   near-clip plane a few units ahead of the camera — the demo therefore
   draws the model at 300 px/m and keeps the camera at pixel-scale
   distances (the same trick the p5 POC sketch uses); a camera placed a
-  couple of "meters" away clips the entire scene.
+  couple of "meters" away clips the entire scene. Two more p5 v2.3.2
+  quirks the demo works around: this build inverts the camera up
+  vector relative to standard GL (world +Z needs up = (0,0,-1)), and
+  `stroke()` on closed 3D surfaces renders nothing (the target ring is
+  filled instead).
 
 ---
 
