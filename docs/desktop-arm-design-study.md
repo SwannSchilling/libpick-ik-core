@@ -1,8 +1,12 @@
 # Desktop 7-DOF Arm — Design Study (rescale of the arm7 POC)
 
-> **Status: design study only — no constants have been changed yet.** Per the
-> design brief this document is the review gate before touching C++ FK,
-> Python, URDF, viewer, or tests.
+> **Status: Design B approved as the working mechanical target** (review
+> round 1 — reach + J2/J4 actuator assignment locked; J1/J3/J5/J6/J7 and
+> structural masses remain open, per the stated scope). No constants have
+> been changed yet; implementation follows the §11 checklist once the §10
+> open items are worked through. Review round 1 items: fold-singularity
+> analysis (§6.1 — tracked as an open item, not a blocker) and the
+> peak-torque clarification (§6).
 >
 > Companion docs: `arm7-kinematic-spec.md` (current POC spec, single source
 > of truth), `integration-roadmap.md`. Service-side state:
@@ -31,9 +35,10 @@
    J4 ≈ 1.9 Nm; J6 ≈ 0.06 Nm. Per kg of payload: J2 +4.86 Nm, J4 +2.75 Nm,
    J6 +0.64 Nm. J2 (shoulder) is the binding joint for all three designs.
 9. **Payload range (B):** ≈ **1.0 kg continuous** at SF 1.5 on rated
-   (18 Nm AK10); ≈ 2.3 kg at rated with no safety factor; ≈ 5 kg in
-   short-duration peak bursts (48 Nm peak). Consistent with the reBot-DevArm
-   data point (650 mm 6-DOF: 1.5+ kg, ~4 kg arm).
+   (18 Nm AK10); ≈ 2.3 kg at rated with no safety factor; ≈ 5.9 kg in
+   short-duration peak bursts (53 Nm spec-sheet peak; SF 1.5 applied to
+   peak as well — raw peak would be 9.5 kg, see §6). Consistent with the
+   reBot-DevArm data point (650 mm 6-DOF: 1.5+ kg, ~4 kg arm).
 10. **Margin assumptions:** SF 1.5 on *rated* torque for
     continuous/quasi-static operation (desktop, smooth profiles, low speed).
     Dynamics at α = 3 rad/s² add ~1.4 Nm (1 kg payload, B) — covered;
@@ -90,7 +95,8 @@ re-runs in one line each when CAD/BOM values land.
 
 | Joint | Actuator | Mass | Envelope | Rated / peak torque | Status |
 |---|---|---|---|---|---|
-| J2 (shoulder pitch) | CubeMars AK10-9 **V2.0** KV60, 9:1, 160 rpm no-load @ 24 V / 320 @ 48 V, integrated driver, dual encoder | **0.960 kg** | **Ø98 × 61.7 mm** | **18 / 48 Nm** | given (do not confuse with V3.0) |
+| J2 (shoulder pitch) | CubeMars AK10-9 **V2.0** KV60, 9:1, 160 rpm no-load @ 24 V / 320 @ 48 V, integrated driver, dual encoder | **0.960 kg** | **Ø98 × 61.7 mm** | **18 / 53 Nm** | given — spec-sheet peak 53 Nm
+   (review round 1; the brief's 48 Nm superseded; do not confuse with V3.0) |
 | J4 (elbow pitch) | CubeMars AK70-10, 10:1 | **0.521 kg** | **Ø89 × 50.25 mm** | **8.3 / 24.8 Nm** | from brief — **verify revision** |
 | J1, J3, J5, J6, J7 | — parameterized `m_Ji`, `τ_r,i`, `τ_p,i` — | see fill-in | — | — | **open** |
 
@@ -238,11 +244,61 @@ Design C levers: 0.110 / 0.22 / 0.33 / 0.44 / 0.475 / 0.510 (m).
 | per kg at J6 | 0.618 | **0.638** | 0.687 |
 | **payload @ SF 1.5 on rated (binding joint J2)** | **1.27 kg** | **1.09 kg** | **1.03 kg** |
 | J4-limited payload @ SF 1.5 (8.3 Nm AK70) | 1.45 | 1.31 | 1.25 |
-| payload at rated, no SF | 2.59 | 2.33 | 2.23 |
-| payload @ SF 1.5 on peak (48 Nm) | 5.67 | 5.21 | 5.03 |
+| payload at rated, no SF (18 Nm) | 2.59 | 2.33 | 2.23 |
+| payload at raw peak, no SF (53 Nm) | 10.30 | 9.54 | 9.22 |
+| payload @ SF 1.5 on peak (budget 35.3 Nm) | 6.41 | 5.90 | 5.69 |
 
 - **J2 is the binding joint in all three designs**; J4 has ~20 % headroom
   vs J2; J6 is not binding even with a 4 Nm placeholder.
+
+**Peak-burst clarification (review round 1).** The peak-burst figures
+apply the *same* SF 1.5 static derating as the continuous figures (peak
+budget 53/1.5 = 35.3 Nm) — they are deliberately not raw-peak operation,
+and no separate duty-cycle model is used (desktop bursts assumed short and
+quasi-static); the raw-peak row is shown for reference only. The original
+draft of this table used the brief's 48 Nm peak; the AK10-9 spec-sheet
+peak is 53 Nm, and all peak rows above use it.
+
+### 6.1 Fold degeneracy (L2 = L3 = 215 mm) — review round 1
+
+With equal upper-arm and forearm lengths the planar wrist-center
+inversion degenerates at full fold: the shoulder–wrist distance
+d(θ4) = 2L·cos(θ4/2) (θ4 = 0 is the straight-arm zero pose) reaches 0 at
+θ4 = ±π, where any arm-angle parameterization u = v/|v| divides by zero.
+Empirically verified this session against the running POC FK (POC scale
+L2 = L3 = 0.40 m; the ratios transfer exactly):
+
+| probe (q2 = −90°) | measured d | 2L·cos(θ4/2) |
+|---|---|---|
+| θ4 = 0 | 0.8000 | 0.8000 |
+| θ4 = π/3 | 0.6928 | 0.6928 |
+| θ4 = π/2 | 0.5657 | 0.5657 |
+| θ4 = 2.00 | 0.4322 | 0.4322 |
+| θ4 = ±2.09 (POC limit) | 0.4015 | 0.4015 |
+| θ4 = 2.00 + rolls (q3 = 1.2, q5 = 0.7) | 0.4322 | 0.4322 |
+
+Consequences for Design B:
+- **The singular point is unreachable under the POC limits.** J4's
+  ±2.09 rad (±119.5°) bound keeps d ≥ 2·0.215·cos(2.09/2) ≈ **216 mm**
+  (POC scale: 402 mm, measured). No `u = v/|v|` term exists in the current
+  solver code (the stack is purely numerical — memetic/gradient/CCD,
+  grep-verified), so there is no literal division by zero today.
+- **Residual risk is conditioning, not hard failure.** As d → d_min the
+  planar-inversion Jacobian loses rank, so numerical steps in the
+  deep-fold band (≈ 216–300 mm) can be noisy or stall. Unreachable
+  fold-interior targets already fail cleanly: probed target 0.10 m in
+  front of the shoulder (requires d = 0.10) → `success: false`,
+  position_error 0.93 m — no silent failure.
+- **Decision: keep 215/215.** The 1:1 dexterity ratio was deliberate and
+  is locked with Design B; breaking the equality (e.g. 215/210) would
+  raise the natural d floor but is not needed while the limit box
+  excludes the degeneracy. The physical fold limit is a CAD item
+  (§10.5).
+- **Guard (tracked as open item §10.8):** make the exclusion explicit —
+  a spec note that targets requiring d below the limit-derived floor are
+  no-solve by construction, plus an optional soft configuration penalty
+  for d < 300 mm so solvers steer clear of the ill-conditioned band (d is
+  cheap to obtain from the FK frames the solver already evaluates).
 - The A→C payload spread is only ~18 %: distal actuator mass dominates the
   shoulder load and is nearly scale-invariant, so reach is a cheap variable
   here — the structural terms move only a few percent across the window.
@@ -295,7 +351,9 @@ Design C levers: 0.110 / 0.22 / 0.33 / 0.44 / 0.475 / 0.510 (m).
 ## 10. Open items / verify before implementation
 
 1. **AK70-10 revision** — verify exact spec (search was down this session);
-   values above are from the brief.
+   values above are from the brief. (AK10-9 V2.0 peak confirmed at 53 Nm
+   from the spec sheet in review round 1 — the brief's 48 Nm is
+   superseded; §2.2/§6 updated.)
 2. **xArm7 URDF** — re-extract joint origins if a public model appears
    (class-level reference only so far).
 3. **J1/J3/J5/J6/J7 selection** — fill the parameter table (§2.2); J6 must
@@ -307,6 +365,12 @@ Design C levers: 0.110 / 0.22 / 0.33 / 0.44 / 0.475 / 0.510 (m).
 6. **Base tip-over check** at CAD stage (estimate §8 is favorable).
 7. **Optional:** slide roll-joint origins along their axes in the URDF to
    match housings (kinematically neutral, §4).
+8. **Fold-singularity guard (§6.1)** — spec note for the d < 216 mm
+   unreachable annulus (under the current J4 ±2.09 rad limits) + optional
+   soft configuration penalty for d < 300 mm. Non-blocking: the exact
+   degeneracy is outside the limit box, fold-interior targets already fail
+   cleanly (verified), and no arm-angle parameterization exists in the
+   current solver code.
 
 ## 11. Implementation checklist (post-approval, Design B numbers)
 
