@@ -10,6 +10,24 @@ geometry_msgs, moveit_core, tf2, or generate_parameter_library. Its only
 dependencies are Eigen (PUBLIC), fmt (PRIVATE, debug-print path), and the
 vendored RSL `random`/`queue` sources.
 
+## Cloning and layout
+
+This repo is designed to be cloned **as a sibling of `ik_service`**
+(<https://github.com/SwannSchilling/ik-service>): the service's CMake
+configures this repo from `../libpick_ik_core` and builds the `pickik`
+binding into the service's `./dist/`.
+
+```
+parent/
+├─ libpick_ik_core/   (this repo: C++ core + binding + docs)
+└─ ik_service/        (FastAPI service + web demo; builds ../libpick_ik_core)
+```
+
+A machine-local `../.deps/` folder (shallow clones of Eigen/fmt/Catch2/
+pybind11) may be used as `FETCHCONTENT_SOURCE_DIR_*` overrides — see
+"Pinning to local dependency checkouts" below. It is not part of either
+repo; without it, CMake fetches dependencies from the network.
+
 ## Layout
 
 ```
@@ -31,7 +49,9 @@ extern/rsl/          vendored byte-identical RSL random/queue sources (see LICEN
 tests/               Catch2 tests, no MoveIt (hand-written FK models)
 bindings/python/     optional pybind11 module `pickik` (PICK_IK_CORE_BUILD_PYTHON, default OFF)
 docs/                api-reference.md (durable API/option reference) +
-                     integration-roadmap.md (Blender/Unity/ROS/sim + perf report)
+                     integration-roadmap.md (Blender/Unity/ROS/sim + perf report) +
+                      arm7-kinematic-spec.md (arm7 model, CAD source of truth) +
+                      pick-ik-core-analysis.md (upstream extraction analysis)
 ```
 
 ## Example: `arm7_cross_check`
@@ -88,7 +108,8 @@ cmake -S . -B build ... -DPICK_IK_CORE_BUILD_PYTHON=ON
   ever touches the interpreter.
 
 A FastAPI service built on this binding (dev/test interface, kept out of this
-library on purpose) lives in `ik_service/` in the parent workspace.
+library on purpose) lives in the sibling repo `ik_service`
+(<https://github.com/SwannSchilling/ik-service>).
 
 ## Python binding threading model (and two crash post-mortems)
 
