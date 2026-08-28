@@ -76,11 +76,15 @@ target_compile_features(pick_ik_core PUBLIC cxx_std_17)
 target_include_directories(pick_ik_core
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extern/rsl/include>
         $<INSTALL_INTERFACE:include>
-        # ik_memetic.hpp includes <rsl/random.hpp> in its public interface
-        # (kept as in upstream); consumers therefore need the vendored RSL
-        # headers. For install, add extern/rsl/include to the install step.
-        ${CMAKE_CURRENT_SOURCE_DIR}/extern/rsl/include)
+        $<INSTALL_INTERFACE:rsl>)
+    # ik_memetic.hpp includes <rsl/random.hpp> in its public interface
+    # (kept as in upstream); consumers therefore need the vendored RSL
+    # headers: from the source tree via the BUILD_INTERFACE entry, from an
+    # install tree via the INSTALL_INTERFACE entry (install() below puts the
+    # headers at <prefix>/include/rsl). Raw source paths must stay out of the
+    # install interface or CMake's export generation fails out-of-source.
 target_link_libraries(pick_ik_core
     PUBLIC Eigen3::Eigen
     PRIVATE fmt::fmt)

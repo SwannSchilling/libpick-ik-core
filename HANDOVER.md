@@ -37,6 +37,13 @@ FetchContent clones Eigen/fmt/Catch2 when not found; on machines with a
 ## Current state / next
 
 - Core is stable; all tests pass; nothing pending.
+- [x] 2026-08-28 build fix: RSL includes moved behind
+  `$<BUILD_INTERFACE:>`/`$<INSTALL_INTERFACE:rsl>` — the raw source path in
+  the install interface made CMake's `install(EXPORT)` generation fatal
+  ("prefixed in the source directory") on out-of-source configure with any
+  CMake ≥ 3.22; found during second-machine onboarding (CMake 3.27.0-rc3).
+  Install consumers now get `<prefix>/include` + `<prefix>/include/rsl`,
+  matching the existing `install(DIRECTORY ...)` rules.
 - Next core work (driven from the service side), per
   `docs/integration-roadmap.md` §3.0:
   1. **`pick_ik_c`** — thin C ABI over the `IkSolver` contract (opaque
