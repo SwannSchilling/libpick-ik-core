@@ -5,3 +5,4 @@ out/
 # CMake/VS user files
 CMakeUserPresets.json
 *.user
+build_config.log
