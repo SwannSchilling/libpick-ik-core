@@ -23,7 +23,18 @@ add_executable(test-pick_ik_core
     goal_tests.cpp
     robot_tests_core.cpp
     ik_tests_core.cpp
-    solver_tests.cpp)
+    solver_tests.cpp
+    c_abi_tests.cpp)
+# The shared arm7 model header lives under examples/ (it is an integration
+# building block, not a public API of the core library).
+target_include_directories(test-pick_ik_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../examples)
+# The C ABI suite exercises pick_ik_c.dll the way a native host would.
+target_link_libraries(test-pick_ik_core PRIVATE pick_ik_c)
+# Put the DLL next to the test executable so ctest/discovery can load it
+# (MSVC searches the exe directory first).
+add_custom_command(TARGET test-pick_ik_core POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:pick_ik_c> $<TARGET_FILE_DIR:test-pick_ik_core>)
 target_link_libraries(test-pick_ik_core
     PRIVATE
         pick_ik_core

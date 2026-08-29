@@ -56,114 +56,9 @@
 #include <cstdio>
 #include <vector>
 
-// ----------------------------------------------------------------------------
-// 7-DOF arm definition (POC URDF)
-// ----------------------------------------------------------------------------
-namespace arm7 {
+// 7-DOF arm definition: the shared model header (examples/arm7/arm7.hpp).
+#include "arm7/arm7.hpp"
 
-constexpr double kPi = 3.14159265358979323846;
-
-// POC URDF limit values, verbatim (note: "-3.14159265" is the URDF text value).
-constexpr double kLimPi = 3.14159265;
-constexpr double kLimShoulder = 2.09;
-constexpr double kVelUpper = 2.17;
-constexpr double kVelWrist = 2.61;
-
-struct Joint {
-    Eigen::Vector3d origin;  ///< Joint origin translation (m), in parent frame
-    Eigen::Matrix3d rotation;  ///< Origin RPY rotation (fixed-axis Rz*Ry*Rx)
-    Eigen::Vector3d axis;      ///< Unit joint axis in the joint frame
-};
-
-inline Eigen::Matrix3d rpy_matrix(double roll, double pitch, double yaw) {
-    // URDF RPY = fixed-axis rotations: Rz(yaw) * Ry(pitch) * Rx(roll)
-    Eigen::Matrix3d const rx =
-        Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX()).toRotationMatrix();
-    Eigen::Matrix3d const ry =
-        Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()).toRotationMatrix();
-    Eigen::Matrix3d const rz =
-        Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()).toRotationMatrix();
-    return rz * ry * rx;
-}
-
-inline Joint make_joint(Eigen::Vector3d const& origin, double roll, double pitch, double yaw,
-                        Eigen::Vector3d const& axis) {
-    Joint j;
-    j.origin = origin;
-    j.rotation = rpy_matrix(roll, pitch, yaw);
-    j.axis = axis.normalized();
-    return j;
-}
-
-inline std::vector<Joint> const& joints() {
-    // J2/J4/J6 origins z = 0.18 / 0.215 / 0.215 m (Design B); all axes are
-    // the joint z axis;
-    // alternating origins: J2, J4, J6 rotated -90 deg about x, J3, J5, J7 +90.
-    static auto const table = [] {
-        std::vector<Joint> j;
-        Eigen::Vector3d const z(0.0, 0.0, 1.0);
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.00), 0.0, 0.0, 0.0, z));        // J1
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.18), -kPi / 2.0, 0.0, 0.0, z)); // J2
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.00), kPi / 2.0, 0.0, 0.0, z));  // J3
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.215), -kPi / 2.0, 0.0, 0.0, z)); // J4
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.00), kPi / 2.0, 0.0, 0.0, z));  // J5
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.215), -kPi / 2.0, 0.0, 0.0, z)); // J6
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.00), kPi / 2.0, 0.0, 0.0, z));  // J7
-        return j;
-    }();
-    return table;
-}
-
-inline Eigen::Vector3d const& tool_offset() {
-    static Eigen::Vector3d const t(0.0, 0.0, 0.065);  // fixed joint link7 -> tool0
-    return t;
-}
-
-/// All joint child frames plus tool0, in the base frame, for q = [J1..J7]:
-/// frames[0..6] = joint pivots, frames[7] = tool0.
-inline std::vector<Eigen::Isometry3d> link_frames(std::vector<double> const& q) {
-    std::vector<Eigen::Isometry3d> frames;
-    frames.reserve(joints().size() + 1);
-    Eigen::Isometry3d frame = Eigen::Isometry3d::Identity();
-    size_t i = 0;
-    for (Joint const& j : joints()) {
-        Eigen::Isometry3d const origin =
-            Eigen::Translation3d(j.origin) * Eigen::Quaterniond(j.rotation);
-        frame = frame * origin * Eigen::AngleAxisd(q[i++], j.axis);
-        frames.push_back(frame);
-    }
-    frames.push_back(frame * Eigen::Translation3d(tool_offset()));
-    return frames;
-}
-
-/// tool0 pose in the base frame for q = [J1..J7] (meters/radians).
-inline Eigen::Isometry3d tool0_pose(std::vector<double> const& q) {
-    return link_frames(q).back();
-}
-
-/// pick_ik::FkFn returning the single tool0 frame. Pure function of q:
-/// re-entrant / thread-safe.
-inline pick_ik::FkFn make_fk() {
-    return [](std::vector<double> const& q) {
-        return std::vector<Eigen::Isometry3d>{tool0_pose(q)};
-    };
-}
-
-/// pick_ik::LinkFkFn returning all joint frames + tool0.
-inline pick_ik::LinkFkFn make_link_fk() {
-    return [](std::vector<double> const& q) {
-        return link_frames(q);
-    };
-}
-
-/// Local joint axes (all z, per the POC URDF).
-inline std::vector<Eigen::Vector3d> make_local_axes() {
-    std::vector<Eigen::Vector3d> axes;
-    for (int i = 0; i < 7; ++i) axes.push_back(Eigen::Vector3d::UnitZ());
-    return axes;
-}
-
-}  // namespace arm7
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -233,11 +128,6 @@ void report(char const* name, Eigen::Isometry3d const& target, pick_ik::FkFn con
 
 }  // namespace
 
-using arm7::kLimPi;
-using arm7::kLimShoulder;
-using arm7::kVelUpper;
-using arm7::kVelWrist;
-
 int main() {
     pick_ik::FkFn const fk = arm7::make_fk();
 
@@ -268,15 +158,8 @@ int main() {
     // =========================================================================
     std::printf("\n=== Part 2: PickIK solve (target from q_true, seed = all zeros) ===\n");
 
-    // Robot: POC URDF limits and max velocities.
-    pick_ik::Robot const robot = pick_ik::Robot::make(
-        {{-kLimPi,  kLimPi,  true, kVelUpper},   // J1
-         {-kLimShoulder, kLimShoulder, true, kVelUpper},  // J2
-         {-kLimPi,  kLimPi,  true, kVelUpper},   // J3
-         {-kLimShoulder, kLimShoulder, true, kVelUpper},  // J4
-         {-kLimPi,  kLimPi,  true, kVelWrist},   // J5
-         {-kLimShoulder, kLimShoulder, true, kVelWrist},  // J6
-         {-kLimPi,  kLimPi,  true, kVelWrist}});  // J7
+    // Robot: Design B limits and max velocities (shared model header).
+    pick_ik::Robot const robot = arm7::make_robot();
 
     std::vector<double> const q_true = {0.5, -0.3, 0.2, -0.5, 0.1, 0.4, -0.2};
     Eigen::Isometry3d const target = fk(q_true)[0];

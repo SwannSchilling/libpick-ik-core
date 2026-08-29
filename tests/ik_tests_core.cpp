@@ -213,16 +213,7 @@ TEST_CASE("RR model IK (gradient)") {
 
 namespace {
 
-pick_ik::Robot arm7_robot() {
-    return pick_ik::Robot::make(
-        {{-M_PI, M_PI, true, 2.17},
-         {-2.09, 2.09, true, 2.17},
-         {-M_PI, M_PI, true, 2.17},
-         {-2.09, 2.09, true, 2.17},
-         {-M_PI, M_PI, true, 2.61},
-         {-2.09, 2.09, true, 2.61},
-         {-M_PI, M_PI, true, 2.61}});
-}
+pick_ik::Robot arm7_robot() { return arm7::make_robot(); }
 
 // A comfortably reachable, non-degenerate target configuration.
 std::vector<double> const arm7_q_true = {0.5, -0.3, 0.2, -0.5, 0.1, 0.4, -0.2};

@@ -18,6 +18,7 @@ project(pick_ik_core LANGUAGES CXX)
 option(PICK_IK_CORE_BUILD_TESTS "Build pick_ik_core tests" ON)
 option(PICK_IK_CORE_BUILD_EXAMPLES "Build pick_ik_core examples" ON)
 option(PICK_IK_CORE_BUILD_PYTHON "Build the Python (pybind11) binding 'pickik'" OFF)
+option(PICK_IK_CORE_BUILD_C_ABI "Build the pick_ik_c C ABI shared library" ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
@@ -124,6 +125,29 @@ endif()
 # ---------------------------------------------------------------------------
 if(PICK_IK_CORE_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+# ---------------------------------------------------------------------------
+# C ABI (shared library for native hosts: Blender ctypes, Unity, C, WASM)
+# ---------------------------------------------------------------------------
+# Thin adapter over the IkSolver contract — no solver code (roadmap §3.0a).
+# Ships the built-in arm7 model (native FK) so hosts need no callbacks.
+if(PICK_IK_CORE_BUILD_C_ABI)
+    add_library(pick_ik_c SHARED src/pickik_c.cpp)
+    target_include_directories(pick_ik_c
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/examples)
+    target_compile_definitions(pick_ik_c PRIVATE PICK_IK_C_BUILDING=1)
+    target_link_libraries(pick_ik_c PRIVATE pick_ik_core)
+    set_target_properties(pick_ik_c PROPERTIES OUTPUT_NAME pick_ik_c)
+    install(FILES include/pick_ik_c/pickik_c.h
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pick_ik_c)
+    install(TARGETS pick_ik_c
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 # ---------------------------------------------------------------------------

@@ -142,12 +142,36 @@ the option tables live in `api-reference.md` §4/§7.
 
 ### 3.0 Shared building blocks (do once, use everywhere)
 
-- **a. C ABI layer (`pick_ik_c`)** — a thin C interface over the existing
-  `IkSolver` contract: opaque robot/solver/result handles, POD 4×4 poses,
-  FK as a C function pointer. No new solver code. This is the entry point
-  for Unity (P/Invoke) and the most robust path for Blender (Blender ships
-  its own CPython; a ctypes/CDLL load sidesteps all pybind/CPython version
-  mismatch).
+- **a. C ABI layer (`pick_ik_c`) — done (2026-08).** Thin C interface over
+  the `IkSolver` contract (`include/pick_ik_c/pickik_c.h`,
+  `src/pickik_c.cpp`, built as the `pick_ik_c` shared library, ON by
+  default). Opaque robot/solver handles, POD options + result structs, FK
+  as a C function pointer, **and the arm7 model compiled in**
+  (`pickik_arm7_robot_create` / `pickik_arm7_link_fk`) so hosts get native
+  ms-class FK with no callbacks of their own. Conventions: meters/radians;
+  poses are standard row-major homogeneous 4×4 (`[R | t; 0 0 0 1]`,
+  translation in column 3); position-only goals use `orientation_threshold
+  < 0` and the default `rotation_scale = 0.0` (the stack-wide convention —
+  matches the service's `/solve` and the C++ `pos_only` test helper).
+  Handles are thread-safe and re-entrant; free each handle with its
+  matching `*_free`.
+- **b. One shared C++ arm7 model — done (2026-08).**
+  `examples/arm7/arm7.hpp`: the Design B joint table (limits/velocities
+  included), FK (`link_frames` / `tool0_pose`), `make_fk` / `make_link_fk`
+  / `make_local_axes`, and `make_robot` / `joint_specs` for
+  `pick_ik::Robot::make`. Every C++ consumer links it: `arm7_cross_check`,
+  the ctest ports (`arm7_fk.hpp` facade, `solver_tests`,
+  `ik_tests_core`, `robot_tests_core`), and `pick_ik_c`. `arm7.py` stays
+  the Python reference pinned to the spec's anchor poses.
+  `ARM7_KINEMATIC_SPEC.md` remains the single source of truth.
+- **c. The validation protocol — done (2026-08).** `tests/c_abi_tests.cpp`
+  (33-test ctotal suite) encodes it through the C boundary exactly as a
+  native host would: spec §5 anchor poses through the built-in C FK, the
+  Design B cross-check targets A/B through all three solvers, the
+  out-of-workspace case (clean `success = 0`), joint-limit validity, the
+  secondary-options plumbing, and a host-supplied FK-callback path.
+  Each host re-runs the same gates against its own path (Blender: the
+  add-on's headless acceptance script).
 - **b. One shared C++ arm7 model** — today the arm7 joint table + FK +
   limits exist in three ports (Python `arm7.py`, C++ in
   `arm7_cross_check/main.cpp`, JS in the p5 sketch). Extract the C++ one

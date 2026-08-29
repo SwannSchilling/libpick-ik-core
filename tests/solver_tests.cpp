@@ -21,15 +21,7 @@
 namespace {
 
 pick_ik::Robot const& arm7_robot() {
-    static pick_ik::Robot const r = pick_ik::Robot::make({
-        {-3.14159265, 3.14159265, true, 2.17},  // J1
-        {-2.09, 2.09, true, 2.17},              // J2
-        {-3.14159265, 3.14159265, true, 2.17},  // J3
-        {-2.09, 2.09, true, 2.17},              // J4
-        {-3.14159265, 3.14159265, true, 2.61},  // J5
-        {-2.09, 2.09, true, 2.61},              // J6
-        {-3.14159265, 3.14159265, true, 2.61},  // J7
-    });
+    static pick_ik::Robot const r = arm7::make_robot();
     return r;
 }
 

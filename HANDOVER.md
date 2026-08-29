@@ -5,8 +5,9 @@
 > `../ik_service/HANDOVER.md` — **read that first.** This file holds the
 > core-specific state.
 >
-> Last updated: 2026-08-28 — core stable, nothing pending; `pick_ik_c` C ABI
-> is the next core work item (prerequisite of the Blender add-on).
+> Last updated: 2026-08-29 — `pick_ik_c` C ABI + shared arm7 header + C-ABI
+> ctest suite landed (roadmap §3.0a/b/c); next: the Blender add-on (§3.1,
+> lives in its own folder/repo, not here).
 
 ## One paragraph
 
@@ -18,7 +19,9 @@ IK solver. Provenance (README "Provenance"): `ik_gradient.cpp` /
 additions: `fk.hpp`, `solver.hpp` (the `IkSolver` contract), `solvers.hpp`
 (`CcdSolver` — a faithful C++ port of the p5 POC's CCD — plus thin
 gradient/memetic wrappers), the `pickik` pybind11 binding (FK-pump design),
-and `examples/arm7_cross_check`.
+the `pick_ik_c` C ABI shared library (thin adapter, no solver code),
+`examples/arm7/arm7.hpp` (the shared C++ arm7 model), and
+`examples/arm7_cross_check`.
 
 Only build dependencies: Eigen 3.4 (PUBLIC), fmt (PRIVATE), vendored RSL.
 No ROS, no MoveIt, no rclcpp.
@@ -36,7 +39,8 @@ FetchContent clones Eigen/fmt/Catch2 when not found; on machines with a
 
 ## Current state / next
 
-- Core is stable; all tests pass; nothing pending.
+- Core is stable; **33/33 ctest green** (26 original + 7 C-ABI protocol
+  tests); nothing pending in this repo.
 - [x] 2026-08-28 build fix: RSL includes moved behind
   `$<BUILD_INTERFACE:>`/`$<INSTALL_INTERFACE:rsl>` — the raw source path in
   the install interface made CMake's `install(EXPORT)` generation fatal
@@ -44,16 +48,28 @@ FetchContent clones Eigen/fmt/Catch2 when not found; on machines with a
   CMake ≥ 3.22; found during second-machine onboarding (CMake 3.27.0-rc3).
   Install consumers now get `<prefix>/include` + `<prefix>/include/rsl`,
   matching the existing `install(DIRECTORY ...)` rules.
-- Next core work (driven from the service side), per
-  `docs/integration-roadmap.md` §3.0:
-  1. **`pick_ik_c`** — thin C ABI over the `IkSolver` contract (opaque
-     handles, POD 4×4 poses, FK as a C function pointer). Entry point for
-     Blender (ctypes) and Unity (P/Invoke). No new solver code.
-  2. **Shared C++ arm7 model** — extract the C++ FK/joint-table from
-     `examples/arm7_cross_check/main.cpp` into `examples/arm7/arm7.hpp` so
-     every integration links one model. `arm7.py` (in ik_service) stays the
-     Python reference pinned to the spec's anchor poses.
-  3. Validation protocol (§3.0c) reused as each integration's acceptance.
+- [x] 2026-08-29 roadmap §3.0 shared blocks (full notes in the roadmap):
+  1. **`pick_ik_c` C ABI — done.** `include/pick_ik_c/pickik_c.h` +
+     `src/pickik_c.cpp` → `pick_ik_c` shared library (ON by default,
+     `PICK_IK_CORE_BUILD_C_ABI`). Opaque handles, POD options/result, C FK
+     callback, plus the arm7 model compiled in (`pickik_arm7_robot_create`,
+     `pickik_arm7_link_fk`, `pickik_arm7_local_axes`). Conventions:
+     standard row-major homogeneous 4×4 (translation in column 3);
+     position-only goal = `orientation_threshold < 0` with the default
+     `rotation_scale = 0.0` (stack-wide convention — matches `/solve` and
+     the C++ `pos_only` helper; a nonzero rotation scale on a position-only
+     goal measurably stalls the gradient solver on target B).
+  2. **Shared C++ arm7 model — done.** `examples/arm7/arm7.hpp` (Design B
+     table + limits/velocities, FK, `make_robot`/`joint_specs`); linked by
+     `arm7_cross_check`, all ctest ports, and `pick_ik_c`.
+  3. **Validation protocol — done.** `tests/c_abi_tests.cpp`: §5 anchors
+     through the C FK, targets A/B through all three solvers,
+     out-of-workspace case, limit validity, options plumbing, host FK
+     callback path. The ctest suite links `pick_ik_c` (DLL copied next to
+     the test exe by a POST_BUILD command).
+- Next core work: driven from the service side — the Blender add-on
+  (roadmap §3.1) consumes `pick_ik_c.dll` via ctypes; nothing more is owed
+  by this repo for it.
 - Docs: `docs/api-reference.md` (API/options),
   `docs/integration-roadmap.md` (integration plan + performance numbers),
   `docs/arm7-kinematic-spec.md` (arm7 model, CAD source of truth, MATH
@@ -78,7 +94,14 @@ FetchContent clones Eigen/fmt/Catch2 when not found; on machines with a
 - Memetic + Python FK serializes through the GIL pump: `num_threads > 1`
   costs time, it does not parallelize (Python FK hosts keep 1; native hosts
   should raise it).
-- Arm7 model: `tests/arm7_fk.hpp` + `examples/arm7_cross_check` are ports of
+- Arm7 model: the C++ side is now the shared header
+  `examples/arm7/arm7.hpp` (single source; `tests/arm7_fk.hpp` is a thin
+  facade over it; `arm7_cross_check` and `pick_ik_c` link it directly). The
+  Python port (`arm7.py` in ik_service) and the URDF stay separate ports of
   `docs/arm7-kinematic-spec.md`. Change the model → update the spec first →
-  update all ports (this repo + ik_service's `arm7.py`) → re-run
-  cross-checks and anchor tests.
+  update all ports → re-run cross-checks and anchor tests.
+- `pick_ik_c`: the DLL must sit next to any exe that loads it (MSVC
+  searches the exe directory first) — the ctest POST_BUILD copy and the
+  Blender add-on's DLL-path property exist for this reason. Row-major 4×4
+  is **standard homogeneous** (translation column 3) — the p5 POC used the
+  transposed layout; do not copy its index math.

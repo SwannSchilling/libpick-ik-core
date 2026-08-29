@@ -18,82 +18,37 @@
 #include <pick_ik/solver.hpp>
 
 #include <Eigen/Geometry>
+
 #include <cassert>
 #include <cmath>
 #include <vector>
 
+#include "arm7/arm7.hpp"  // the shared model (Design B constants + FK)
+
 namespace arm7 {
 
-constexpr double kPi = 3.14159265358979323846;
-
-struct Joint {
-    Eigen::Vector3d origin;    ///< Joint origin translation (m), in parent frame
-    Eigen::Matrix3d rotation;  ///< Joint origin RPY rotation (fixed-axis: Rz(yaw)*Ry(pitch)*Rx(roll))
-    Eigen::Vector3d axis;      ///< Joint axis in joint frame (unit vector)
-    double min = 0.0;
-    double max = 0.0;
-    double max_velocity = 0.0;
-    bool bounded = true;
-};
-
-inline Eigen::Matrix3d rpy_matrix(double roll, double pitch, double yaw) {
-    // URDF RPY = fixed-axis rotations: Rz(yaw) * Ry(pitch) * Rx(roll)
-    Eigen::Matrix3d const rx =
-        Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX()).toRotationMatrix();
-    Eigen::Matrix3d const ry =
-        Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()).toRotationMatrix();
-    Eigen::Matrix3d const rz =
-        Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()).toRotationMatrix();
-    return rz * ry * rx;
-}
-
-inline Joint make_joint(Eigen::Vector3d const& origin,
-                        double roll,
-                        double pitch,
-                        double yaw,
-                        Eigen::Vector3d const& axis,
-                        double min,
-                        double max,
-                        double max_velocity) {
-    Joint j;
-    j.origin = origin;
-    j.rotation = rpy_matrix(roll, pitch, yaw);
-    j.axis = axis.normalized();
-    j.min = min;
-    j.max = max;
-    j.max_velocity = max_velocity;
-    return j;
-}
+// (The Joint struct, rpy_matrix / make_joint helpers, make_fk / make_link_fk /
+//  make_local_axes all live in the shared model header arm7/arm7.hpp — the
+//  single source for the C++ side. The Arm7 class below keeps the test-facing
+//  facade: make() / link_frames / tool0_pose / joint_count / joint(i).)
 
 class Arm7 {
    public:
     static Arm7 make() {
+        // Built from the shared model header (examples/arm7/arm7.hpp) so the
+        // ctest ports and every other C++ consumer share one constant set.
         Arm7 arm;
-        Eigen::Vector3d const z(0.0, 0.0, 1.0);
-
-        // J1: base yaw
-        arm.joints_.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.0), 0.0, 0.0, 0.0, z,
-                                         -kPi, kPi, 2.17));
-        // J2: shoulder pitch
-        arm.joints_.push_back(
-            make_joint(Eigen::Vector3d(0.0, 0.0, 0.18), -kPi / 2.0, 0.0, 0.0, z, -2.09, 2.09, 2.17));
-        // J3: shoulder roll
-        arm.joints_.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.0), kPi / 2.0, 0.0, 0.0, z,
-                                         -kPi, kPi, 2.17));
-        // J4: elbow pitch
-        arm.joints_.push_back(
-            make_joint(Eigen::Vector3d(0.0, 0.0, 0.215), -kPi / 2.0, 0.0, 0.0, z, -2.09, 2.09, 2.17));
-        // J5: forearm roll
-        arm.joints_.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.0), kPi / 2.0, 0.0, 0.0, z,
-                                         -kPi, kPi, 2.61));
-        // J6: wrist pitch
-        arm.joints_.push_back(
-            make_joint(Eigen::Vector3d(0.0, 0.0, 0.215), -kPi / 2.0, 0.0, 0.0, z, -2.09, 2.09, 2.61));
-        // J7: tool roll
-        arm.joints_.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.0), kPi / 2.0, 0.0, 0.0, z,
-                                         -kPi, kPi, 2.61));
-
-        arm.tool_offset_ = Eigen::Vector3d(0.0, 0.0, 0.065);  // fixed joint link7 -> tool0
+        for (arm7::Joint const& j : arm7::joints()) {
+            Joint t;
+            t.origin = j.origin;
+            t.rotation = j.rotation;
+            t.axis = j.axis;
+            t.min = j.min;
+            t.max = j.max;
+            t.max_velocity = j.max_velocity;
+            arm.joints_.push_back(std::move(t));
+        }
+        arm.tool_offset_ = arm7::tool_offset();  // fixed joint link7 -> tool0
         return arm;
     }
 
@@ -133,32 +88,7 @@ class Arm7 {
     Eigen::Vector3d tool_offset_;
 };
 
-/// @brief pick_ik::FkFn callback returning the tool0 pose (single tip frame).
-/// Pure function of q, no shared mutable state: safe under concurrent calls.
-inline auto make_fk() -> pick_ik::FkFn {
-    auto arm = Arm7::make();
-    return [arm = std::move(arm)](std::vector<double> const& q)
-        -> std::vector<Eigen::Isometry3d> {
-        return std::vector<Eigen::Isometry3d>{arm.tool0_pose(q)};
-    };
-}
-
-/// @brief pick_ik::LinkFkFn: all joint child frames + tool0 (8 frames).
-inline auto make_link_fk() -> pick_ik::LinkFkFn {
-    auto arm = Arm7::make();
-    return [arm = std::move(arm)](std::vector<double> const& q)
-        -> std::vector<Eigen::Isometry3d> {
-        return arm.link_frames(q);
-    };
-}
-
-/// @brief Local joint axes (all z, per the POC URDF).
-inline auto make_local_axes() -> std::vector<Eigen::Vector3d> {
-    std::vector<Eigen::Vector3d> axes;
-    for (int i = 0; i < 7; ++i) {
-        axes.push_back(Eigen::Vector3d::UnitZ());
-    }
-    return axes;
-}
+// (make_fk / make_link_fk / make_local_axes are provided by the shared model
+//  header arm7/arm7.hpp.)
 
 }  // namespace arm7

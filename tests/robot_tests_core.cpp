@@ -1,6 +1,7 @@
 #include <pick_ik/robot.hpp>
 
 #include <catch2/catch_approx.hpp>
+#include "arm7/arm7.hpp"  // shared arm7 model (joint specs)
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
@@ -8,18 +9,8 @@
 #include <vector>
 
 namespace {
-// The 7-DOF arm joint specs from the POC URDF (RobotArm_2026_08_25_10_03_56).
-std::vector<pick_ik::Robot::JointSpec> arm7_specs() {
-    return {
-        {-M_PI, M_PI, true, 2.17},    // J1
-        {-2.09, 2.09, true, 2.17},    // J2
-        {-M_PI, M_PI, true, 2.17},    // J3
-        {-2.09, 2.09, true, 2.17},    // J4
-        {-M_PI, M_PI, true, 2.61},    // J5
-        {-2.09, 2.09, true, 2.61},    // J6
-        {-M_PI, M_PI, true, 2.61},    // J7
-    };
-}
+// The 7-DOF arm joint specs (shared model header, Design B).
+std::vector<pick_ik::Robot::JointSpec> arm7_specs() { return arm7::joint_specs(); }
 }  // namespace
 
 TEST_CASE("pick_ik::Robot::make -- 7-DOF arm") {
