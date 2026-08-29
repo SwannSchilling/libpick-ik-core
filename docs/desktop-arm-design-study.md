@@ -1,12 +1,12 @@
 # Desktop 7-DOF Arm — Design Study (rescale of the arm7 POC)
 
-> **Status: Design B approved as the working mechanical target** (review
-> round 1 — reach + J2/J4 actuator assignment locked; J1/J3/J5/J6/J7 and
-> structural masses remain open, per the stated scope). No constants have
-> been changed yet; implementation follows the §11 checklist once the §10
-> open items are worked through. Review round 1 items: fold-singularity
-> analysis (§6.1 — tracked as an open item, not a blocker) and the
-> peak-torque clarification (§6).
+> **Status: Design B implemented (2026-08) — all code/spec/demo ports
+> rescaled and verified; Design B remains the locked working mechanical
+> target.** Review round 1 (reach + J2/J4 actuator assignment locked;
+> J1/J3/J5/J6/J7 and structural masses remain open, per the stated scope)
+> was run down per the §11 checklist — completion notes per item below.
+> Review round 1 items: fold-singularity analysis (§6.1 — tracked as an open
+> item, not a blocker) and the peak-torque clarification (§6).
 >
 > Companion docs: `arm7-kinematic-spec.md` (current POC spec, single source
 > of truth), `integration-roadmap.md`. Service-side state:
@@ -378,22 +378,49 @@ Per the triple-port discipline (HANDOVER §5):
 
 1. `docs/arm7-kinematic-spec.md` — L1 0.180, L2/L3 0.215, tool 0.065;
    recompute §5 anchor poses; add the actuator-envelope note.
+   **Done** (2026-08): spec rescaled — anchors zero (0,0,0.675), shoulder
+   fwd/back (±0.495,0,0.180), elbow fwd (0.280,0,0.395), wrist fwd
+   (0.065,0,0.610); §3 envelope table rebuilt from the §8 actuator
+   dimensions; §6 workspace (reach 0.495 m, inner boundary ≈0.151 m) plus
+   the fold-degeneracy note; effort column carries J2 = 18 / J4 = 8.3 Nm
+   rated with the actuator note.
 2. C++ test ports (`tests/arm7_fk.hpp`, `examples/arm7_cross_check`) —
    constants; rebuild + ctest + cross-check against the Python port.
+   **Done** (2026-08): ctest 26/26; cross-check Part 1 zero pose
+   (0,0,0.675) to machine precision; targets A 200/100/300 (CCD pins J6 at
+   the 2.09 limit — deep-fold behavior confirmed) and B 300/150/300 (no
+   pinned joints) solved by all three solvers (CCD 0.00 mm, memetic
+   <1 µm, gradient ≤ ~1 mm).
 3. `service/arm7.py` — JOINTS origin-z: J2 0.180, J4/J6 0.215;
    TOOL_OFFSET 0.065. Limits/velocities/axes unchanged.
+   **Done** (2026-08): four constants changed, nothing else.
 4. `robot_description/arm7.urdf` — rescale each segment's visuals by its
    own ratio (≈ 0.53, not perfectly uniform: 180/340 = 0.529,
    215/400 = 0.538, 65/126 = 0.516); **recommended: rebuild the visuals at
    the new dimensions** (first step toward the motor-housing visuals the
    brief's "coherent mechanical design" implies); joint origins follow the
    spec; mesh `scale` attributes as needed.
+   **Done** (2026-08, rebuild path taken): visuals rebuilt at the new
+   dimensions — 50–60 mm structural boxes (0.06 m), J2 sphere Ø110
+   (AK10-9), J4 sphere Ø95 (AK70-10), J6 placeholder Ø76, tool Ø44 shaft;
+   joint origins and effort attributes updated (J2 18 / J4 8.3 Nm rated;
+   placeholders elsewhere).
 5. pytest — anchor expectations; new cross-check targets inside the B
    workspace: proposed **200/100/300** and **300/150/300 mm**
    (norms 380 / 440 mm < 495 mm ✓).
+   **Done** (2026-08): 44/44 pytest green, targets as proposed. Test-shape
+   note: the full-pose orientation-metric test now uses the deterministic
+   gradient solver — the memetic's random population seeding measurably
+   stalls at the zero seed on large-orientation goals (upstream behavior;
+   memetic full-pose coverage lives in ctest) — and the goal is FK of a
+   known configuration, reachable by construction.
 6. Web demo — target sliders x/y −550…550, z 0…650; defaults 300/150/300;
    camera: view.dist 3.3 → 1.8 m, wheel clamp 0.3–3.0 m, ground grid
    ±0.6 m; "CCD cross-check" text updated.
+   **Done** (2026-08): all values as specified; the camera look-at height
+   also moved 0.5 → 0.3 m to frame the shorter chain.
 7. Docs — mark this study approved; HANDOVER bullet; no HANDOVER model
    changes beyond that.
+   **Done** (2026-08): this header + HANDOVER §4 updated to implemented.
 8. No `pickik` binding changes — the binding is model-agnostic.
+   **Done** (2026-08): verified — zero binding diff.

@@ -7,7 +7,9 @@
 //   base_link at identity;
 //   for each joint (document order):
 //       child frame = parent frame * joint origin transform * R(axis, q)
-//   tool0 = link7 + 0.126 along link7 z (fixed joint).
+//   tool0 = link7 + 0.065 along link7 z (fixed joint, Design B desktop
+//   dimensions — see docs/desktop-arm-design-study.md; the POC 1.266 m
+//   scaffolding was rescaled 2026-08 to 0.675 m).
 //
 // Real-world units (meters/radians) — the POC's display SCALE factor is NOT
 // applied here.
@@ -74,24 +76,24 @@ class Arm7 {
                                          -kPi, kPi, 2.17));
         // J2: shoulder pitch
         arm.joints_.push_back(
-            make_joint(Eigen::Vector3d(0.0, 0.0, 0.34), -kPi / 2.0, 0.0, 0.0, z, -2.09, 2.09, 2.17));
+            make_joint(Eigen::Vector3d(0.0, 0.0, 0.18), -kPi / 2.0, 0.0, 0.0, z, -2.09, 2.09, 2.17));
         // J3: shoulder roll
         arm.joints_.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.0), kPi / 2.0, 0.0, 0.0, z,
                                          -kPi, kPi, 2.17));
         // J4: elbow pitch
         arm.joints_.push_back(
-            make_joint(Eigen::Vector3d(0.0, 0.0, 0.40), -kPi / 2.0, 0.0, 0.0, z, -2.09, 2.09, 2.17));
+            make_joint(Eigen::Vector3d(0.0, 0.0, 0.215), -kPi / 2.0, 0.0, 0.0, z, -2.09, 2.09, 2.17));
         // J5: forearm roll
         arm.joints_.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.0), kPi / 2.0, 0.0, 0.0, z,
                                          -kPi, kPi, 2.61));
         // J6: wrist pitch
         arm.joints_.push_back(
-            make_joint(Eigen::Vector3d(0.0, 0.0, 0.40), -kPi / 2.0, 0.0, 0.0, z, -2.09, 2.09, 2.61));
+            make_joint(Eigen::Vector3d(0.0, 0.0, 0.215), -kPi / 2.0, 0.0, 0.0, z, -2.09, 2.09, 2.61));
         // J7: tool roll
         arm.joints_.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.0), kPi / 2.0, 0.0, 0.0, z,
                                          -kPi, kPi, 2.61));
 
-        arm.tool_offset_ = Eigen::Vector3d(0.0, 0.0, 0.126);  // fixed joint link7 -> tool0
+        arm.tool_offset_ = Eigen::Vector3d(0.0, 0.0, 0.065);  // fixed joint link7 -> tool0
         return arm;
     }
 

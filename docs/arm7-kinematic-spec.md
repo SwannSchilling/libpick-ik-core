@@ -1,8 +1,12 @@
 # dof7_arm — Kinematic Specification (CAD source of truth)
 
-**Status: MATH CONFIRMED.** This model is model-first: the numbers below are the
-design, and the CAD is built to realize them. The kinematics have been verified
-by an independent dual-implementation cross-check:
+**Status: MATH CONFIRMED (Design B desktop dimensions).** This model is
+model-first: the numbers below are the design, and the CAD is built to realize
+them. The 2026-08 rescale from the 1.266 m POC scaffolding to the 0.675 m
+desktop arm (Design B; `desktop-arm-design-study.md`) preserved the joint
+convention, limits, and velocities; only the linear dimensions changed. The
+kinematics have been verified by an independent dual-implementation
+cross-check:
 
 - C++ FK (`libpick_ik_core/examples/arm7_cross_check/main.cpp`) ≡ p5.js FK
   (`RobotArm_2026_08_25_10_03_56/sketch.js`, `computeURDFFK`) to machine
@@ -26,19 +30,25 @@ re-run the cross-check before treating the new model as confirmed.
 - FK chain (standard URDF semantics, both implementations agree):
   `frame_i = frame_{i-1} · T(origin_i) · R(rpy_i) · R(z, q_i)`; RPY =
   fixed-axis `Rz(yaw)·Ry(pitch)·Rx(roll)`; every joint axis is local z.
-- `tool0` = fixed joint 0.126 m along the J7 frame z-axis, zero extra rotation.
+- `tool0` = fixed joint 0.065 m along the J7 frame z-axis, zero extra rotation.
 
 ## 2. Joint table
 
 | # | Name | Function | Pivot at zero pose (m) | Axis at zero pose | Limits (rad) | Limits (deg) | Vel max (rad/s) | Effort (N·m) |
 |---|------|----------|------------------------|-------------------|--------------|--------------|-----------------|--------------|
 | J1 | joint1 | base yaw | (0, 0, 0.000) | +z | ±3.14159265 | ±180.0000° | 2.17 (124.3°/s) | 87 |
-| J2 | joint2 | shoulder pitch | (0, 0, 0.340) | +y | ±2.09 | ±119.75° | 2.17 | 87 |
-| J3 | joint3 | shoulder roll | (0, 0, 0.340) | upper-arm axis (= +z at zero) | ±3.14159265 | ±180.0000° | 2.17 | 87 |
-| J4 | joint4 | elbow pitch | (0, 0, 0.740) | +y | ±2.09 | ±119.75° | 2.17 | 87 |
-| J5 | joint5 | forearm roll | (0, 0, 0.740) | forearm axis (= +z at zero) | ±3.14159265 | ±180.0000° | 2.61 (149.5°/s) | 12 |
-| J6 | joint6 | wrist pitch | (0, 0, 1.140) | +y | ±2.09 | ±119.75° | 2.61 | 12 |
-| J7 | joint7 | tool roll | (0, 0, 1.140) | tool axis (= +z at zero) | ±3.14159265 | ±180.0000° | 2.61 | 12 |
+| J2 | joint2 | shoulder pitch | (0, 0, 0.180) | +y | ±2.09 | ±119.75° | 2.17 | 18 |
+| J3 | joint3 | shoulder roll | (0, 0, 0.180) | upper-arm axis (= +z at zero) | ±3.14159265 | ±180.0000° | 2.17 | 87 |
+| J4 | joint4 | elbow pitch | (0, 0, 0.395) | +y | ±2.09 | ±119.75° | 2.17 | 8.3 |
+| J5 | joint5 | forearm roll | (0, 0, 0.395) | forearm axis (= +z at zero) | ±3.14159265 | ±180.0000° | 2.61 (149.5°/s) | 12 |
+| J6 | joint6 | wrist pitch | (0, 0, 0.610) | +y | ±2.09 | ±119.75° | 2.61 | 12 |
+| J7 | joint7 | tool roll | (0, 0, 0.610) | tool axis (= +z at zero) | ±3.14159265 | ±180.0000° | 2.61 | 12 |
+
+- **Actuator assignment (Design B, review round 1):** J2 = CubeMars AK10-9
+  V2.0 KV60 (effort = 18 Nm rated / 53 Nm peak), J4 = CubeMars AK70-10
+  (effort = 8.3 Nm rated / 24.8 Nm peak). J1/J3/J5/J6/J7 are still open —
+  their efforts above are placeholders; fill in when the joints are chosen
+  (`desktop-arm-design-study.md` §2.2).
 
 - **Coaxial design**: at the zero pose all seven joint axes pass through the
   central vertical line; J3/J5/J7 roll axes pass exactly through the J2/J4/J6
@@ -49,14 +59,18 @@ re-run the cross-check before treating the new model as confirmed.
 
 | Segment | Pivot-to-pivot | Visual envelope (cylinder) |
 |---|---|---|
-| Base pillar (base→J2) | **0.340 m** | r = 0.050, length 0.340, spans z 0.000→0.340 |
-| J1 housing (link1) | — | r = 0.055, length 0.100 around J1 axis |
-| J2 housing (link2) | — | r = 0.055, length 0.100 around J2 pivot |
-| Upper arm (J2→J4) | **0.400 m** | r = 0.038, length 0.400 along arm |
-| J4 housing (link4) | — | r = 0.050, length 0.090 around J4 pivot |
-| Forearm (J4→J6) | **0.400 m** | r = 0.032, length 0.400 along arm |
-| J6 housing (link6) | — | r = 0.045, length 0.075 around J6 pivot |
-| Tool shaft (J6→tool0) | **0.126 m** | r = 0.025, length 0.126 (full tool length) |
+| Base pillar (base→J2) | **0.180 m** | r = 0.050, length 0.180, spans z 0.000→0.180 |
+| J1 housing (link1) | — | r = 0.055, length 0.100 around J1 axis (placeholder — J1 motor open) |
+| J2 housing (link2) | — | r = 0.055, length 0.065 around J2 pivot (AK10-9: Ø98 × 61.7 mm) |
+| Upper arm (J2→J4) | **0.215 m** | r = 0.030, length 0.215 along arm (50–60 mm structural section) |
+| J4 housing (link4) | — | r = 0.0475, length 0.055 around J4 pivot (AK70-10: Ø89 × 50.25 mm) |
+| Forearm (J4→J6) | **0.215 m** | r = 0.030, length 0.215 along arm (50–60 mm structural section) |
+| J6 housing (link6) | — | r = 0.035, length 0.055 around J6 pivot (placeholder, ≤ Ø70 motor) |
+| Tool shaft (J6→tool0) | **0.065 m** | r = 0.020, length 0.065 (full tool length) |
+
+Envelope rationale: `desktop-arm-design-study.md` §8 — structural links are
+50–60 mm and narrower than the motors, whose housings protrude; J2/J4
+envelopes come from the selected actuator dimensions.
 
 The cylinder envelopes double as the collision volumes for the planned
 self-collision sweep (see §6).
@@ -64,7 +78,7 @@ self-collision sweep (see §6).
 ## 4. Zero pose
 
 All joints zero ⇒ arm fully straight up along +z:
-**tool0 at (0, 0, 1.266) m** = 0.340 + 0.400 + 0.400 + 0.126.
+**tool0 at (0, 0, 0.675) m** = 0.180 + 0.215 + 0.215 + 0.065.
 Tool z-axis points +z; this is the natural home pose.
 
 ## 5. Verified anchor poses (CAD acceptance tests)
@@ -74,15 +88,22 @@ Set these on the physical arm and measure the tool point:
 
 | Pose | J1 | J2 | J3 | J4 | J5 | J6 | J7 | tool0 (m) |
 |---|---|---|---|---|---|---|---|---|
-| zero | 0 | 0 | 0 | 0 | 0 | 0 | 0 | (0, 0, 1.266) |
-| yaw | +π/2 | 0 | 0 | 0 | 0 | 0 | 0 | (0, 0, 1.266) — position invariant, frame yaws |
-| shoulder fwd | 0 | +π/2 | 0 | 0 | 0 | 0 | 0 | (0.926, 0, 0.340) |
-| shoulder back | 0 | −π/2 | 0 | 0 | 0 | 0 | 0 | (−0.926, 0, 0.340) |
-| shoulder roll | 0 | 0 | +π/2 | 0 | 0 | 0 | 0 | (0, 0, 1.266) — position invariant, upper arm rolls |
-| elbow fwd | 0 | 0 | 0 | +π/2 | 0 | 0 | 0 | (0.526, 0, 0.740) |
-| forearm roll | 0 | 0 | 0 | 0 | +π/2 | 0 | 0 | (0, 0, 1.266) — position invariant, forearm rolls |
-| wrist fwd | 0 | 0 | 0 | 0 | 0 | +π/2 | 0 | (0.126, 0, 1.140) |
-| tool roll | 0 | 0 | 0 | 0 | 0 | 0 | +π/2 | (0, 0, 1.266) — position invariant, tool rolls |
+| zero | 0 | 0 | 0 | 0 | 0 | 0 | 0 | (0, 0, 0.675) |
+| yaw | +π/2 | 0 | 0 | 0 | 0 | 0 | 0 | (0, 0, 0.675) — position invariant, frame yaws |
+| shoulder fwd | 0 | +π/2 | 0 | 0 | 0 | 0 | 0 | (0.495, 0, 0.180) |
+| shoulder back | 0 | −π/2 | 0 | 0 | 0 | 0 | 0 | (−0.495, 0, 0.180) |
+| shoulder roll | 0 | 0 | +π/2 | 0 | 0 | 0 | 0 | (0, 0, 0.675) — position invariant, upper arm rolls |
+| elbow fwd | 0 | 0 | 0 | +π/2 | 0 | 0 | 0 | (0.280, 0, 0.395) |
+| forearm roll | 0 | 0 | 0 | 0 | +π/2 | 0 | 0 | (0, 0, 0.675) — position invariant, forearm rolls |
+| wrist fwd | 0 | 0 | 0 | 0 | 0 | +π/2 | 0 | (0.065, 0, 0.610) |
+| tool roll | 0 | 0 | 0 | 0 | 0 | 0 | +π/2 | (0, 0, 0.675) — position invariant, tool rolls |
+
+Anchor derivation (single-joint 90° excursions from zero — pure geometry):
+zero = 0.180 + 0.215 + 0.215 + 0.065; shoulder fwd = 0.215 + 0.215 + 0.065
+forward at J2 height 0.180; elbow fwd = 0.215 + 0.065 forward at J4 height
+0.180 + 0.215; wrist fwd = 0.065 forward at J6 height 0.610. Verified
+against the rebuilt C++ reference (`arm7_cross_check` Part 1) after the
+2026-08 rescale.
 
 Position-invariant joints must show a visible rotation of the affected link
 (frame axes in the simulator) — that is how you verify a roll axis is on the
@@ -90,13 +111,21 @@ arm axis.
 
 ## 6. Workspace facts (consequences of the pitch limits)
 
-- Max horizontal reach from the J2 pivot: 0.400 + 0.400 + 0.126 = **0.926 m**
+- Max horizontal reach from the J2 pivot: 0.215 + 0.215 + 0.065 = **0.495 m**
   (fully extended, J2 = ±90°).
 - **Inner boundary**: with J4 limited to ±2.09 rad, the tool point can never
-  come within **≈ 0.276 m** of the J2 pivot (0.80·cos(2.09/2) − 0.126).
+  come within **≈ 0.151 m** of the J2 pivot (0.430·cos(2.09/2) − 0.065).
   Targets inside that cylinder around the upper-arm axis are unreachable —
   both solvers correctly report no solution. If close-in reach is wanted, the
   model must be changed (e.g. widen J4) *before* CAD.
+- **Fold degeneracy (L2 = L3 = 0.215 m):** the shoulder–wrist distance
+  d = 2L·cos(θ4/2) reaches 0 only at the full fold θ4 = ±π, which is
+  *outside* the ±2.09 rad limit box: the limits keep d ≥ 2·0.215·cos(2.09/2)
+  ≈ 0.216 m, so the degenerate point (where an arm-angle parameterization
+  u = v/|v| would divide by zero) is structurally excluded and targets
+  requiring d < 0.216 m are no-solve by construction. Tracked open item:
+  spec note + optional soft configuration penalty for d < 0.300 m
+  (`desktop-arm-design-study.md` §6.1 / §10.8).
 - Deep targets force J4 or J6 to its ±2.09 limit (limit-pinned solutions);
   expect that in IK results and in CAD stop design.
 
@@ -105,9 +134,16 @@ arm axis.
 | File | Role |
 |---|---|
 | `libpick_ik_core/examples/arm7_cross_check/main.cpp` | `namespace arm7` joint table — reference implementation (limits, velocities, origins, RPY) |
-| `RobotArm_2026_08_25_10_03_56/sketch.js` (embedded `URDF`, L41+) | p5.js simulator source (same constants) |
+| `libpick_ik_core/tests/arm7_fk.hpp` | C++ test port (ctest anchors + solver tests) |
+| `ik-service/service/arm7.py` | Python port (service FK + solver model) |
+| `ik-service/robot_description/arm7.urdf` | viewer visuals + joint limits (cosmetic; must mirror the chain) |
 | `ARM7_KINEMATIC_SPEC.md` (this file) | human/CAD-readable spec |
 
+(Historical: the POC's p5.js sketch `RobotArm_2026_08_25_10_03_56/sketch.js`
+was the original 1:1 source; it is machine-local and predates the Design B
+rescale.)
+
 Any geometry/limits change: edit the C++ table first, re-run
-`arm7_cross_check` (FK cross-check + solver self-test) against the updated
-sketch, then propagate to CAD.
+`arm7_cross_check` (FK cross-check + solver self-test), re-run ctest +
+pytest, then propagate to Python, URDF, and CAD (HANDOVER §5 triple-port
+discipline).

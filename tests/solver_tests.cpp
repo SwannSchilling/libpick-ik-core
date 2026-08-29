@@ -55,14 +55,14 @@ std::vector<double> const& quantized_zero_seed() {
 Eigen::Isometry3d target_a() {
     // "Deep fold" target: every solution pins J4 or J6 at the 2.09 rad limit.
     Eigen::Isometry3d t = Eigen::Isometry3d::Identity();
-    t.translation() = Eigen::Vector3d(0.30, 0.20, 0.45);
+    t.translation() = Eigen::Vector3d(0.20, 0.10, 0.30);  // 200/100/300 mm
     return t;
 }
 
 Eigen::Isometry3d target_b() {
     // "Moderate" target: reachable with no joint at its limit.
     Eigen::Isometry3d t = Eigen::Isometry3d::Identity();
-    t.translation() = Eigen::Vector3d(0.45, 0.25, 0.45);
+    t.translation() = Eigen::Vector3d(0.30, 0.15, 0.30);  // 300/150/300 mm
     return t;
 }
 

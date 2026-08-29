@@ -5,8 +5,10 @@
 // Uses the 7-DOF arm of the p5.js POC project
 // (RobotArm_2026_08_25_10_03_56/sketch.js) as-is:
 //
-//   * joint table transcribed 1:1 from the POC's embedded URDF
-//     (joints 1..7 revolute, joint7_to_tool0 fixed, tool0 offset z = 0.126 m)
+//   * joint table transcribed 1:1 from the POC's embedded URDF, then
+//     rescaled to the Design B desktop dimensions (2026-08; see
+//     docs/desktop-arm-design-study.md): base->J2 0.18 m, J2->J4/J4->J6
+//     0.215 m each, joint7_to_tool0 fixed, tool0 offset z = 0.065 m
 //   * forward kinematics ported 1:1 from the POC's `computeURDFFK`:
 //         base at identity;
 //         for each joint (URDF document order):
@@ -94,17 +96,18 @@ inline Joint make_joint(Eigen::Vector3d const& origin, double roll, double pitch
 }
 
 inline std::vector<Joint> const& joints() {
-    // J2/J4/J6 origins z = 0.34 / 0.40 / 0.40 m; all axes are the joint z axis;
+    // J2/J4/J6 origins z = 0.18 / 0.215 / 0.215 m (Design B); all axes are
+    // the joint z axis;
     // alternating origins: J2, J4, J6 rotated -90 deg about x, J3, J5, J7 +90.
     static auto const table = [] {
         std::vector<Joint> j;
         Eigen::Vector3d const z(0.0, 0.0, 1.0);
         j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.00), 0.0, 0.0, 0.0, z));        // J1
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.34), -kPi / 2.0, 0.0, 0.0, z)); // J2
+        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.18), -kPi / 2.0, 0.0, 0.0, z)); // J2
         j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.00), kPi / 2.0, 0.0, 0.0, z));  // J3
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.40), -kPi / 2.0, 0.0, 0.0, z)); // J4
+        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.215), -kPi / 2.0, 0.0, 0.0, z)); // J4
         j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.00), kPi / 2.0, 0.0, 0.0, z));  // J5
-        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.40), -kPi / 2.0, 0.0, 0.0, z)); // J6
+        j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.215), -kPi / 2.0, 0.0, 0.0, z)); // J6
         j.push_back(make_joint(Eigen::Vector3d(0.0, 0.0, 0.00), kPi / 2.0, 0.0, 0.0, z));  // J7
         return j;
     }();
@@ -112,7 +115,7 @@ inline std::vector<Joint> const& joints() {
 }
 
 inline Eigen::Vector3d const& tool_offset() {
-    static Eigen::Vector3d const t(0.0, 0.0, 0.126);  // fixed joint link7 -> tool0
+    static Eigen::Vector3d const t(0.0, 0.0, 0.065);  // fixed joint link7 -> tool0
     return t;
 }
 
@@ -326,16 +329,19 @@ int main() {
     // i.e. slider mm -> meters. Both targets are position-only, matching the
     // POC's CCD (which drives tool0 position, ignoring orientation).
     //
-    //   A = "deep fold": 300/200/450 mm. Sits deep in the workspace: every
-    //       solution pins J4 or J6 at the 2.09 rad limit. The POC's CCD
-    //       stalls ~30 mm short of this target from the zero seed.
-    //   B = "moderate":  450/250/450 mm. Reached with J2~0.5, J4~1.3,
-    //       J6~1.8 — no joint pinned at its limit.
+    //   A = "deep fold": 200/100/300 mm. Sits deep in the workspace: every
+    //       solution pins J4 or J6 at the 2.09 rad limit.
+    //   B = "moderate":  300/150/300 mm. Mid-workspace; no joint pinned at
+    //       its limit.
     //
-    // NOTE: an earlier candidate (100/150/450) mm was OUT of the arm's
-    // workspace: with the +-2.09 rad J2/J4 limits the tool can never come
-    // closer than ~0.275 m to the J2 joint at (0, 0, 0.34); that point sat
-    // 0.211 m away. Both solvers correctly reported NO SOLUTION for it.
+    // NOTE: targets are OUT of the arm's workspace when the required
+    // shoulder-to-wrist distance falls below the limit-derived floor: with
+    // the +-2.09 rad J4 limit the tool can never come closer than ~0.151 m
+    // to the J2 joint at (0, 0, 0.18) (0.430*cos(2.09/2) - 0.065; the equal
+    // 0.215 m arm segments make d -> 0 only at the unreachable full fold,
+    // see docs/desktop-arm-design-study.md section 6.1). E.g. a point 0.05 m
+    // in front of the shoulder is unreachable — both solvers correctly
+    // report NO SOLUTION.
     //
     // The seed matches the sketch's quantized "all zero" slider state: p5
     // sliders snap to 0.01 rad steps anchored at the joint's lower limit
@@ -349,8 +355,8 @@ int main() {
             return t;
         };
         std::vector<std::pair<char const*, Eigen::Isometry3d>> const targets3 = {
-            {"A (deep fold) 300/200/450 mm", make_pos_target(0.30, 0.20, 0.45)},
-            {"B (moderate) 450/250/450 mm",  make_pos_target(0.45, 0.25, 0.45)}};
+            {"A (deep fold) 200/100/300 mm", make_pos_target(0.20, 0.10, 0.30)},
+            {"B (moderate) 300/150/300 mm",  make_pos_target(0.30, 0.15, 0.30)}};
         std::vector<double> const seed3 = {-0.00159265, 0.0, -0.00159265, 0.0, -0.00159265, 0.0,
                                             -0.00159265};
 
@@ -410,8 +416,8 @@ int main() {
             return t;
         };
         std::vector<std::pair<char const*, Eigen::Isometry3d>> const targets4 = {
-            {"A (deep fold) 300/200/450 mm", make_pos_target(0.30, 0.20, 0.45)},
-            {"B (moderate) 450/250/450 mm",  make_pos_target(0.45, 0.25, 0.45)}};
+            {"A (deep fold) 200/100/300 mm", make_pos_target(0.20, 0.10, 0.30)},
+            {"B (moderate) 300/150/300 mm",  make_pos_target(0.30, 0.15, 0.30)}};
         std::vector<double> const seed4 = {-0.00159265, 0.0, -0.00159265, 0.0, -0.00159265, 0.0,
                                             -0.00159265};
         auto link_fk4 = arm7::make_link_fk();

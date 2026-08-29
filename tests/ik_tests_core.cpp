@@ -232,13 +232,13 @@ std::vector<double> const arm7_q_true = {0.5, -0.3, 0.2, -0.5, 0.1, 0.4, -0.2};
 TEST_CASE("Arm7 FK reference") {
     auto const arm = arm7::Arm7::make();
 
-    SECTION("zero configuration -> tool0 at (0, 0, 1.266) with identity orientation") {
+    SECTION("zero configuration -> tool0 at (0, 0, 0.675) with identity orientation") {
         // All joints at zero: arm stands vertically, tool0 pointing +z.
-        // 0.34 + 0.40 + 0.40 + 0.126 = 1.266
+        // 0.180 + 0.215 + 0.215 + 0.065 = 0.675 (Design B desktop dimensions)
         auto const pose = arm.tool0_pose({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
         CHECK(pose.translation().x() == Catch::Approx(0.0).margin(1e-9));
         CHECK(pose.translation().y() == Catch::Approx(0.0).margin(1e-9));
-        CHECK(pose.translation().z() == Catch::Approx(1.266).margin(1e-9));
+        CHECK(pose.translation().z() == Catch::Approx(0.675).margin(1e-9));
         CHECK(pose.rotation().isApprox(Eigen::Matrix3d::Identity(), 1e-9));
     }
 
