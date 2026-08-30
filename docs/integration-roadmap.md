@@ -187,12 +187,12 @@ the option tables live in `api-reference.md` §4/§7.
 
 ### 3.1 Blender add-on — *done (2026-08-30, v1)*
 
-- Landed in its own folder `blender_ik_addon/` at the workspace root
-  (hosting decision open — see the project HANDOVER): `__init__.py`
-  (Blender 4.0+ add-on: rig builder, target empty, solver dropdown,
-  Solve, continuous timer, status readout), `ik_core.py` (ctypes wrapper,
-  DLL auto-discovery), `arm7_rig.py` (joint table + empty hierarchy),
-  `test_acceptance.py` (headless, 5 gates).
+- Own repo: [`SwannSchilling/blender_ik_addon`](https://github.com/SwannSchilling/blender_ik_addon)
+  (BSD-3, first commit `fe3c162`, 2026-08-30): `__init__.py` (Blender 3.4+
+  add-on: rig builder, target empty, solver dropdown, Solve, continuous
+  timer, status readout), `ik_core.py` (ctypes wrapper, DLL auto-discovery),
+  `arm7_rig.py` (joint table + empty hierarchy), `test_acceptance.py`
+  (headless, 5 gates).
 - **Acceptance passed on Blender 4.5.3 headless** (all 5 gates, 2026-08-30):
   spec §5 anchors through the rig FK and the C ABI FK (worst 1e-7 m),
   target B via gradient (0.68 mm), target A via memetic **on a background
