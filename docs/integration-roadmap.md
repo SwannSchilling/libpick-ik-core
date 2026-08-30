@@ -185,19 +185,26 @@ the option tables live in `api-reference.md` §4/§7.
   limit sweeps. The native ctest suite and the service pytest already encode
   these; each host just re-runs them against its own FK/solve path.
 
-### 3.1 Blender add-on — *done (2026-08-30, v1)*
+### 3.1 Blender add-on — *done (2026-08-30, v1; cross-version fixes + FK exposure)*
 
 - Own repo: [`SwannSchilling/blender_ik_addon`](https://github.com/SwannSchilling/blender_ik_addon)
-  (BSD-3, first commit `fe3c162`, 2026-08-30): `__init__.py` (Blender 3.4+
-  add-on: rig builder, target empty, solver dropdown, Solve, continuous
-  timer, status readout), `ik_core.py` (ctypes wrapper, DLL auto-discovery),
-  `arm7_rig.py` (joint table + empty hierarchy), `test_acceptance.py`
-  (headless, 5 gates).
-- **Acceptance passed on Blender 4.5.3 headless** (all 5 gates, 2026-08-30):
-  spec §5 anchors through the rig FK and the C ABI FK (worst 1e-7 m),
-  target B via gradient (0.68 mm), target A via memetic **on a background
-  thread** (0.8 µm, 56 ms), the out-of-workspace case (clean no-solution),
-  main-thread stall budget (gradient p90 ~2.1 ms, CCD p90 ~3.8 ms).
+  (BSD-3, first commit `fe3c162`, 2026-08-30; operator cross-version fixes
+  `1a3f449`; FK values + manual FK sliders `1e52f5d`): `__init__.py`
+  (Blender 3.4+ add-on: rig builder, target empty + mm sliders, solver
+  dropdown, Solve, continuous timer, J1..J7 manual FK sliders, exposed FK
+  values — `scene.pickik.q_j1..q_j7`, `tool0_*_mm`, per-joint `ik_q_deg`
+  custom property, status readout), `ik_core.py` (ctypes wrapper, DLL
+  auto-discovery), `arm7_rig.py` (joint table + empty hierarchy; joint
+  empties carry the FK locally — angle = `rotation_euler.z`, ZYX euler
+  order — and are linked to the view layer), `test_acceptance.py`
+  (headless, 7 gates).
+- **Acceptance passed on Blender 4.5.3 AND 3.4.1 headless** (all 7 gates,
+  `--factory-startup`): spec §5 anchors through the rig FK and the C ABI
+  FK (worst 1e-7 m), target B via gradient (0.68 mm), target A via memetic
+  **on a background thread** (0.8 µm, 56 ms), the out-of-workspace case
+  (clean no-solution), main-thread stall budget, operators end to end via
+  `bpy.ops`, and manual FK through the joint sliders against the spec
+  anchor (J2 +90° → tool0 (0.495, 0, 0.180)).
 - The add-on's CCD default is 100 passes (~2.2 ms), not the C-ABI 600
   (~15 ms): CCD is local, 100 passes converges from a nearby seed; the
   C default stays the conservative upper bound.
