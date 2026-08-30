@@ -189,16 +189,17 @@ the option tables live in `api-reference.md` §4/§7.
 
 - Own repo: [`SwannSchilling/blender_ik_addon`](https://github.com/SwannSchilling/blender_ik_addon)
   (BSD-3, first commit `fe3c162`, 2026-08-30; operator cross-version fixes
-  `1a3f449`; FK values + manual FK sliders `1e52f5d`): `__init__.py`
-  (Blender 3.4+ add-on: rig builder, target empty + mm sliders, solver
+  `1a3f449`; FK values + manual FK sliders `1e52f5d`; target authority
+  fix `5223781`): `__init__.py` (Blender 3.4+ add-on: rig builder, target
+  empty + mm sliders (move the target live via update callbacks), solver
   dropdown, Solve, continuous timer, J1..J7 manual FK sliders, exposed FK
   values — `scene.pickik.q_j1..q_j7`, `tool0_*_mm`, per-joint `ik_q_deg`
-  custom property, status readout), `ik_core.py` (ctypes wrapper, DLL
-  auto-discovery), `arm7_rig.py` (joint table + empty hierarchy; joint
-  empties carry the FK locally — angle = `rotation_euler.z`, ZYX euler
-  order — and are linked to the view layer), `test_acceptance.py`
-  (headless, 7 gates).
-- **Acceptance passed on Blender 4.5.3 AND 3.4.1 headless** (all 7 gates,
+  custom property, status readout, no snap-back), `ik_core.py` (ctypes
+  wrapper, DLL auto-discovery + found-path pre-select), `arm7_rig.py`
+  (joint table + empty hierarchy; joint empties carry the FK locally —
+  angle = `rotation_euler.z`, ZYX euler order — and are linked to the
+  view layer), `test_acceptance.py` (headless, 13 gates).
+- **Acceptance passed on Blender 4.5.3 AND 3.4.1 headless** (all 13 gates,
   `--factory-startup`): spec §5 anchors through the rig FK and the C ABI
   FK (worst 1e-7 m), target B via gradient (0.68 mm), target A via memetic
   **on a background thread** (0.8 µm, 56 ms), the out-of-workspace case
