@@ -105,3 +105,16 @@ FetchContent clones Eigen/fmt/Catch2 when not found; on machines with a
   Blender add-on's DLL-path property exist for this reason. Row-major 4×4
   is **standard homogeneous** (translation column 3) — the p5 POC used the
   transposed layout; do not copy its index math.
+- **`pick_ik_c` ships with the static MSVC CRT (`/MT`)** — build the core
+  code for it as `pick_ik_core_plugin` (CMake), never link it against the
+  dynamic `pick_ik_core`. Reason: Blender pins its own older C++ runtime
+  (`blender.crt/msvcp140.dll`, 14.29 in 4.5) for the whole process via
+  app-local manifest; that runtime's `std::condition_variable` /
+  `this_thread` internals do not match the layout modern MSVC headers
+  assume, so host-runtime thread waiting dereferences null (reproduced:
+  AV in MSVCP140 inside `rsl::Queue::pop` / `sleep_for` on the memetic
+  multi-threaded harvest — crash only in the Blender process, identical
+  code fine in plain CPython or a C++ host). The static CRT makes every
+  std:: thread/sync primitive self-contained inside `pick_ik_c.dll`.
+  fmt is header-only in the plugin variant (`FMT_HEADER_ONLY`,
+  `fmt::fmt-header-only`) so no /MD-compiled fmt code is mixed in.

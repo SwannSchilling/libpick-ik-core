@@ -91,6 +91,44 @@ target_link_libraries(pick_ik_core
     PRIVATE fmt::fmt)
 
 # ---------------------------------------------------------------------------
+# Core library — plugin-ABI variant (static C++ runtime)
+# ---------------------------------------------------------------------------
+# pick_ik_c is a plugin that loads into arbitrary host processes: Blender
+# pins its own older C++ runtime (blender.crt/msvcp140.dll, 14.29) via
+# app-local manifest, and that runtime's std::condition_variable / this_thread
+# internals do not match the layout our 14.4x headers assume — calls into the
+# host's MSVCP140 dereference null (AV in rsl::Queue::pop / sleep_for during
+# the memetic multi-threaded harvest). Building the core with the static MSVC
+# CRT (/MT) makes every std:: thread/sync primitive self-contained inside
+# pick_ik_c.dll, independent of the host's MSVCP140 version. fmt is
+# header-only in this variant so no dynamically built fmt code is mixed in.
+add_library(pick_ik_core_plugin STATIC
+    src/robot.cpp
+    src/goal.cpp
+    src/ik_gradient.cpp
+    src/ik_memetic.cpp
+    src/solver.cpp
+    extern/rsl/src/random.cpp)
+target_compile_features(pick_ik_core_plugin PUBLIC cxx_std_17)
+target_include_directories(pick_ik_core_plugin
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extern/rsl/include>
+        $<INSTALL_INTERFACE:include>
+        $<INSTALL_INTERFACE:rsl>)
+target_link_libraries(pick_ik_core_plugin PUBLIC Eigen3::Eigen)
+if(MSVC)
+    # fmt headers only: FMT_HEADER_ONLY compiles fmt inline, so no /MD
+    # compiled fmt object code ends up inside the /MT plugin binary.
+    target_link_libraries(pick_ik_core_plugin PRIVATE fmt::fmt-header-only)
+    target_compile_definitions(pick_ik_core_plugin PRIVATE FMT_HEADER_ONLY)
+    set_target_properties(pick_ik_core_plugin PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
+    target_link_libraries(pick_ik_core_plugin PRIVATE fmt::fmt)
+endif()
+
+# ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
@@ -140,8 +178,11 @@ if(PICK_IK_CORE_BUILD_C_ABI)
             $<INSTALL_INTERFACE:include>
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/examples)
     target_compile_definitions(pick_ik_c PRIVATE PICK_IK_C_BUILDING=1)
-    target_link_libraries(pick_ik_c PRIVATE pick_ik_core)
-    set_target_properties(pick_ik_c PROPERTIES OUTPUT_NAME pick_ik_c)
+    target_link_libraries(pick_ik_c PRIVATE pick_ik_core_plugin)
+    # The plugin ships its own C++ runtime (see pick_ik_core_plugin above):
+    # pick_ik_c must use the same static CRT or the two CRTs collide.
+    set_target_properties(pick_ik_c PROPERTIES OUTPUT_NAME pick_ik_c
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     install(FILES include/pick_ik_c/pickik_c.h
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pick_ik_c)
     install(TARGETS pick_ik_c

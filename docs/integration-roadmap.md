@@ -185,7 +185,28 @@ the option tables live in `api-reference.md` §4/§7.
   limit sweeps. The native ctest suite and the service pytest already encode
   these; each host just re-runs them against its own FK/solve path.
 
-### 3.1 Blender add-on — *next up*
+### 3.1 Blender add-on — *done (2026-08-30, v1)*
+
+- Landed in its own folder `blender_ik_addon/` at the workspace root
+  (hosting decision open — see the project HANDOVER): `__init__.py`
+  (Blender 4.0+ add-on: rig builder, target empty, solver dropdown,
+  Solve, continuous timer, status readout), `ik_core.py` (ctypes wrapper,
+  DLL auto-discovery), `arm7_rig.py` (joint table + empty hierarchy),
+  `test_acceptance.py` (headless, 5 gates).
+- **Acceptance passed on Blender 4.5.3 headless** (all 5 gates, 2026-08-30):
+  spec §5 anchors through the rig FK and the C ABI FK (worst 1e-7 m),
+  target B via gradient (0.68 mm), target A via memetic **on a background
+  thread** (0.8 µm, 56 ms), the out-of-workspace case (clean no-solution),
+  main-thread stall budget (gradient p90 ~2.1 ms, CCD p90 ~3.8 ms).
+- The add-on's CCD default is 100 passes (~2.2 ms), not the C-ABI 600
+  (~15 ms): CCD is local, 100 passes converges from a nearby seed; the
+  C default stays the conservative upper bound.
+- **Plugin-ABI runtime fix** (core side): `pick_ik_c` now builds from
+  `pick_ik_core_plugin` with the static MSVC CRT (`/MT`). Blender pins its
+  own older `MSVCP140.dll` for the whole process (blender.crt, 14.29 in
+  4.5); thread-waiting into the host's runtime dereferenced null in the
+  memetic harvest (crash only inside Blender). The static CRT makes the
+  DLL's thread primitives self-contained — also the shape Unity wants.
 
 - Shape: Blender 4.x Python add-on that loads the `pick_ik_c` shared library
   via ctypes (§3.0 a) and drives the shared arm7 FK. UI mirrors the p5
